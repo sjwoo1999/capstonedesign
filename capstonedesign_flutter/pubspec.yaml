@@ -16,6 +16,7 @@ dependencies:
   image_picker: ^1.1.2
   provider: ^6.1.2  # 상태 관리 추가
   image: ^4.2.0
+  fl_chart: ^0.63.0
 
 dev_dependencies:
   flutter_test:
@@ -25,4 +26,5 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/mobilenetv2.tflite  # TFLite 모델 추가
+    - assets/mobilenet_v2_1.0_224.tflite
+    - assets/model.tflite
