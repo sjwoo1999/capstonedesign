@@ -1,21 +1,29 @@
-# 모델 파일 (Git에 올리지 않음)
-models/emotion_model.h5
-assets/shape_predictor_68_face_landmarks.dat
+# 📁 모델 및 리소스 파일 무시
+models/
+assets/
+*.h5
+*.hdf5
+*.dat
+*.xml
 
-# Python 환경 파일
+# 🧠 딥러닝 학습 관련 체크포인트
+*.ckpt
+*.pb
+*.pt
+*.onnx
+
+# 🐍 파이썬 캐시 및 가상환경 무시
 __pycache__/
 *.py[cod]
-*.h5
-*.dat
-*.log
-
-# 가상환경 폴더
 .venv/
 venv/
 
-# VSCode, PyCharm 설정
-.vscode/
-.idea/
+# 📓 Jupyter 노트북 체크포인트
+.ipynb_checkpoints/
 
-# OS 파일
+# 🍏 macOS 시스템 파일
 .DS_Store
+
+# 🛠 IDE 설정 파일
+.idea/
+.vscode/
