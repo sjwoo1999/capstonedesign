@@ -54,9 +54,12 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
     }
 
     _controller?.startImageStream((CameraImage image) {
-      if (!mounted || !_controller!.value.isStreamingImages || _isDetecting)
+      if (!mounted ||
+          !_controller!.value.isStreamingImages ||
+          _isDetecting ||
+          !_tfliteService.isInterpreterReady) {
         return;
-      if (!_tfliteService.isInterpreterReady) return; // 🔐 interpreter 준비되지 않음
+      }
 
       _isDetecting = true;
       final imageCopy = image;
@@ -70,9 +73,9 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
           if (mounted) {
             context.read<EmotionProvider>().setResult(result);
           }
-        } catch (e, stack) {
+        } catch (e, stackTrace) {
           debugPrint('❌ 실시간 분석 중 오류: $e');
-          debugPrint(stack.toString());
+          debugPrint(stackTrace.toString());
         } finally {
           _isDetecting = false;
         }
@@ -83,7 +86,7 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
   @override
   void dispose() {
     _controller?.dispose();
-    _tfliteService.dispose(); // ✅ 인터프리터 메모리 해제
+    _tfliteService.dispose();
     super.dispose();
   }
 
@@ -117,7 +120,7 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
                                   color: Colors.white70, fontSize: 16),
                             )
                           : Text(
-                              '감정: ${result.probabilities.entries.reduce((a, b) => a.value > b.value ? a : b).key}',
+                              '감정: ${result.topEmotion}',
                               style: const TextStyle(
                                   color: Colors.white, fontSize: 18),
                             ),

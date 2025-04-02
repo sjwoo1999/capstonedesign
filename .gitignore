@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.h5
+*.hdf5
+*.dat
+
+# venv
+.venv/
+venv/
+
+# Flutter
+build/
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+flutter_*.png
+
+# OS
+.DS_Store
+.idea/
+.vscode/
