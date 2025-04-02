@@ -8,8 +8,15 @@ class EmotionProvider extends ChangeNotifier {
   bool _isAnalyzingText = false;
   bool get isAnalyzingText => _isAnalyzingText;
 
+  /// 로컬 모델 결과 설정 (기존 유지)
   void setResult(EmotionResult result) {
     _result = result;
+    notifyListeners();
+  }
+
+  /// 🆕 Flask API 결과 설정용 메서드
+  void setResultFromApi(Map<String, dynamic> json) {
+    _result = EmotionResult.fromApi(json);
     notifyListeners();
   }
 
@@ -18,6 +25,7 @@ class EmotionProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 예시 텍스트 감정 분석 흐름
   Future<void> analyze({required String text}) async {
     _isAnalyzingText = true;
     notifyListeners();

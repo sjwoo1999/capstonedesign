@@ -1,21 +1,23 @@
-// 📂 lib/main.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
-import 'package:capstonedesign_flutter/providers/emotion_provider.dart';
-import 'package:capstonedesign_flutter/services/tflite_service.dart';
-import 'package:capstonedesign_flutter/screens/home_screen.dart';
+import 'providers/emotion_provider.dart';
+import 'screens/home_screen.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  final tfliteService = TFLiteService();
-  await tfliteService.loadModel();
+  try {
+    await dotenv.load(fileName: ".env");
+    print("✅ .env loaded: ${dotenv.env['EMOTION_API_URL']}");
+  } catch (e) {
+    print("❌ .env loading failed: $e");
+  }
 
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => EmotionProvider()),
-        Provider<TFLiteService>.value(value: tfliteService),
       ],
       child: const MyApp(),
     ),

@@ -1,9 +1,13 @@
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
-import '../providers/emotion_provider.dart';
-import '../services/tflite_service.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart'; // ✅ 추가
 import '../models/emotion_result.dart';
+import '../providers/emotion_provider.dart';
+import '../services/emotion_api_service.dart';
 
 class RealtimeCameraScreen extends StatefulWidget {
   const RealtimeCameraScreen({super.key});
@@ -15,78 +19,73 @@ class RealtimeCameraScreen extends StatefulWidget {
 class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
   CameraController? _controller;
   bool _isDetecting = false;
-  late TFLiteService _tfliteService;
   bool _isCameraInitialized = false;
+  late EmotionAPIService _apiService;
 
   @override
   void initState() {
     super.initState();
-    _initializeSystem();
+    _apiService = EmotionAPIService();
+    _initializeCamera();
   }
 
-  Future<void> _initializeSystem() async {
-    try {
-      _tfliteService = Provider.of<TFLiteService>(context, listen: false);
-      await _tfliteService.loadModel();
+  Future<void> _initializeCamera() async {
+    final cameras = await availableCameras();
+    final frontCamera = cameras.firstWhere(
+      (camera) => camera.lensDirection == CameraLensDirection.front,
+      orElse: () => cameras.first,
+    );
 
-      final cameras = await availableCameras();
-      final frontCamera = cameras.firstWhere(
-        (camera) => camera.lensDirection == CameraLensDirection.front,
-        orElse: () => cameras.first,
-      );
-
-      _controller = CameraController(frontCamera, ResolutionPreset.medium);
-      await _controller!.initialize();
-
-      if (!mounted) return;
-      setState(() => _isCameraInitialized = true);
-
-      _startLiveAnalysis();
-    } catch (e) {
-      debugPrint('❌ 시스템 초기화 중 오류 발생: $e');
-    }
+    _controller = CameraController(frontCamera, ResolutionPreset.medium);
+    await _controller!.initialize();
+    if (!mounted) return;
+    setState(() => _isCameraInitialized = true);
+    _startImageStream();
   }
 
-  void _startLiveAnalysis() {
-    if (!_tfliteService.isModelLoaded) {
-      debugPrint('❌ 모델이 로드되지 않아 분석 불가');
-      return;
-    }
-
-    _controller?.startImageStream((CameraImage image) {
-      if (!mounted ||
-          !_controller!.value.isStreamingImages ||
-          _isDetecting ||
-          !_tfliteService.isInterpreterReady) {
-        return;
-      }
-
+  void _startImageStream() {
+    _controller?.startImageStream((CameraImage image) async {
+      if (_isDetecting) return;
       _isDetecting = true;
-      final imageCopy = image;
 
-      Future.microtask(() async {
-        try {
-          final input = _tfliteService.preprocessCameraImage(imageCopy);
-          final preds = await _tfliteService.infer(input);
-          final result = EmotionResult.fromLocal(preds);
+      try {
+        final base64Image = await _convertToBase64(image);
+        final resultMap = await _apiService.sendImageForAnalysis(base64Image);
+        final result = EmotionResult.fromApi(resultMap);
 
-          if (mounted) {
-            context.read<EmotionProvider>().setResult(result);
-          }
-        } catch (e, stackTrace) {
-          debugPrint('❌ 실시간 분석 중 오류: $e');
-          debugPrint(stackTrace.toString());
-        } finally {
-          _isDetecting = false;
+        if (mounted) {
+          context.read<EmotionProvider>().setResult(result);
         }
-      });
+      } catch (e) {
+        debugPrint("❌ 감정 분석 실패: $e");
+      } finally {
+        _isDetecting = false;
+      }
     });
+  }
+
+  Future<String> _convertToBase64(CameraImage image) async {
+    final width = image.width;
+    final height = image.height;
+    final yPlane = image.planes[0];
+
+    final img.Image grayImage = img.Image(width: width, height: height);
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        final pixel = yPlane.bytes[y * width + x];
+        grayImage.setPixelRgb(x, y, pixel, pixel, pixel);
+      }
+    }
+
+    final resized = img.copyResize(grayImage, width: 224, height: 224);
+    final jpg = img.encodeJpg(resized);
+
+    return base64Encode(jpg);
   }
 
   @override
   void dispose() {
     _controller?.dispose();
-    _tfliteService.dispose();
     super.dispose();
   }
 
@@ -107,23 +106,15 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
                   right: 0,
                   child: Center(
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                       decoration: BoxDecoration(
                         color: Colors.black87,
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: result == null
-                          ? const Text(
-                              '분석 중...',
-                              style: TextStyle(
-                                  color: Colors.white70, fontSize: 16),
-                            )
-                          : Text(
-                              '감정: ${result.topEmotion}',
-                              style: const TextStyle(
-                                  color: Colors.white, fontSize: 18),
-                            ),
+                          ? const Text('분석 중...', style: TextStyle(color: Colors.white70, fontSize: 16))
+                          : Text('감정: ${result.topEmotion} (${(result.confidence * 100).toStringAsFixed(1)}%)',
+                              style: const TextStyle(color: Colors.white, fontSize: 18)),
                     ),
                   ),
                 ),
