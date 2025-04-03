@@ -134,14 +134,14 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
       appBar: AppBar(
-        title: Text("Realtime Emotion",
+        title: Text("실시간 감정 분석",
             style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
         centerTitle: true,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black87,
         elevation: 0.5,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios),
+          icon: const Icon(Icons.arrow_back_ios_new),
           onPressed: () => Navigator.pop(context),
         ),
       ),
@@ -165,10 +165,22 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Expanded(
-                            child: EmotionChart(
-                                probabilities: result?.probabilities ?? {})),
-                        const SizedBox(height: 16),
+                          child: EmotionChart(
+                              probabilities: result?.probabilities ?? {}),
+                        ),
+                        const SizedBox(height: 12),
                         _buildResultMessage(result, errorMessage),
+                        const SizedBox(height: 12),
+
+                        // ✅ 새로 추가된 UX 메시지
+                        Text(
+                          '🙌 영상은 저장되지 않아요.\n표정 데이터만 분석돼요.',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.poppins(
+                            color: Colors.grey.shade600,
+                            fontSize: 13,
+                          ),
+                        ),
                       ],
                     ),
                   ),

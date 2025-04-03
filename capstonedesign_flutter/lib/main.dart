@@ -31,9 +31,21 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'CapstoneDesign',
-      theme: ThemeData(primarySwatch: Colors.blue),
-      home: HomeScreen(),
+      title: '마음온도',
+      theme: ThemeData(
+        primarySwatch: Colors.deepPurple,
+        scaffoldBackgroundColor: const Color(0xFFF6F7F9),
+        textTheme: Theme.of(context).textTheme.apply(
+              fontFamily: 'NotoSansKR',
+            ),
+        fontFamily: 'NotoSansKR',
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.white,
+          foregroundColor: Colors.black87,
+          elevation: 1,
+        ),
+      ),
+      home: const HomeScreen(),
     );
   }
 }
