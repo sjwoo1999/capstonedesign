@@ -1,14 +1,14 @@
-// 📂 lib/models/emotion_result.dart
 class EmotionResult {
   final Map<String, double> probabilities;
   final String feedback;
+  final String? errorMessage; // ✅ 실패 메시지 추가
 
   EmotionResult({
     required this.probabilities,
     required this.feedback,
+    this.errorMessage,
   });
 
-  /// 로컬 모델에서 나온 예측값
   factory EmotionResult.fromLocal(List<double> preds) {
     return EmotionResult(
       probabilities: {
@@ -24,10 +24,17 @@ class EmotionResult {
     );
   }
 
-  /// Flask API에서 온 결과
   factory EmotionResult.fromApi(Map<String, dynamic> json) {
-    final String topEmotion = json['emotion'];
-    final double confidence = (json['confidence'] as num).toDouble();
+    if (json.containsKey('error')) {
+      return EmotionResult(
+        probabilities: {},
+        feedback: '',
+        errorMessage: json['error'],
+      );
+    }
+
+    final topEmotion = json['emotion'];
+    final confidence = (json['confidence'] as num).toDouble();
 
     return EmotionResult(
       probabilities: {
@@ -37,14 +44,16 @@ class EmotionResult {
     );
   }
 
-  /// ✅ 추가: 가장 높은 감정 반환
   String get topEmotion {
     if (probabilities.isEmpty) return 'Unknown';
-    return probabilities.entries.reduce((a, b) => a.value >= b.value ? a : b).key;
+    return probabilities.entries
+        .reduce((a, b) => a.value >= b.value ? a : b)
+        .key;
   }
 
-  /// ✅ 추가: topEmotion의 확신도 반환
   double get confidence {
     return probabilities[topEmotion] ?? 0.0;
   }
+
+  bool get isError => errorMessage != null;
 }

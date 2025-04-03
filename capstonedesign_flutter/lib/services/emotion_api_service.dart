@@ -6,7 +6,8 @@ class EmotionAPIService {
   final String baseUrl;
 
   EmotionAPIService({String? customUrl})
-      : baseUrl = customUrl ?? (dotenv.env['EMOTION_API_URL'] ?? 'http://localhost:5001');
+      : baseUrl = customUrl ??
+            (dotenv.env['EMOTION_API_URL'] ?? 'http://localhost:5001');
 
   Future<Map<String, dynamic>> sendImageForAnalysis(String base64Image) async {
     final response = await http.post(
@@ -15,10 +16,10 @@ class EmotionAPIService {
       body: jsonEncode({"image": base64Image}),
     );
 
-    if (response.statusCode == 200) {
+    try {
       return jsonDecode(response.body);
-    } else {
-      throw Exception('API 호출 실패: ${response.body}');
+    } catch (e) {
+      throw Exception('API 응답 파싱 실패: ${response.body}');
     }
   }
 }
