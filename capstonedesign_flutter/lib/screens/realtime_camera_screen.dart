@@ -1,13 +1,16 @@
-// 📂 lib/screens/realtime_camera_screen.dart
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:google_fonts/google_fonts.dart';
+
 import '../models/emotion_result.dart';
 import '../providers/emotion_provider.dart';
 import '../services/emotion_api_service.dart';
+import '../widgets/emotion_chart.dart';
 
 class RealtimeCameraScreen extends StatefulWidget {
   const RealtimeCameraScreen({super.key});
@@ -36,6 +39,7 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
       (camera) => camera.lensDirection == CameraLensDirection.front,
       orElse: () => cameras.first,
     );
+
     _controller = CameraController(frontCamera, ResolutionPreset.medium);
     await _controller!.initialize();
     if (!mounted) return;
@@ -49,26 +53,27 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
       _isDetecting = true;
 
       try {
-        _analysisAttempts += 1;
+        _analysisAttempts++;
         final base64Image = await _convertToBase64(image);
         final resultMap = await _apiService.sendImageForAnalysis(base64Image);
 
-        if (resultMap.containsKey('error')) {
-          if (mounted) {
-            context
-                .read<EmotionProvider>()
-                .setError('👀 얼굴이 인식되지 않았어요. 화면을 바라봐 주세요.');
-          }
-        } else {
-          final result = EmotionResult.fromApi(resultMap);
-          if (mounted) {
-            context.read<EmotionProvider>()
+        if (mounted) {
+          final provider = context.read<EmotionProvider>();
+          if (resultMap.containsKey('error')) {
+            provider.setError('👀 얼굴이 인식되지 않았어요. 화면을 바라봐 주세요.');
+            debugPrint(
+                '❌ 분석 실패[$_analysisAttempts회] → No face detected @ ${DateTime.now()}');
+          } else {
+            final result = EmotionResult.fromApi(resultMap);
+            provider
               ..clearError()
               ..setResult(result);
+            debugPrint(
+                '✅ 분석 성공[$_analysisAttempts회] → ${result.topEmotion} (${(result.confidence * 100).toStringAsFixed(1)}%)');
           }
         }
       } catch (e) {
-        debugPrint("❌ 분석 예외[시도 $_analysisAttempts]: $e");
+        debugPrint("❌ 분석 예외[$_analysisAttempts회]: $e");
       } finally {
         await Future.delayed(const Duration(milliseconds: 500));
         _isDetecting = false;
@@ -127,87 +132,68 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
     final errorMessage = context.watch<EmotionProvider>().errorMessage;
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF5F6FA),
       appBar: AppBar(
-        title: const Text('Realtime Emotion'),
-        leading: BackButton(),
-        backgroundColor: Colors.deepPurple,
-        foregroundColor: Colors.white,
+        title: Text("Realtime Emotion",
+            style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        centerTitle: true,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+        elevation: 0.5,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios),
+          onPressed: () => Navigator.pop(context),
+        ),
       ),
       body: !_isCameraInitialized
           ? const Center(child: CircularProgressIndicator())
           : Row(
               children: [
                 Expanded(
-                  flex: 2,
-                  child: CameraPreview(_controller!),
+                  flex: 6,
+                  child: AspectRatio(
+                    aspectRatio: _controller!.value.aspectRatio,
+                    child: CameraPreview(_controller!),
+                  ),
                 ),
                 Expanded(
-                  flex: 1,
-                  child: _buildEmotionGraph(result),
-                ),
+                  flex: 4,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 20),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                            child: EmotionChart(
+                                probabilities: result?.probabilities ?? {})),
+                        const SizedBox(height: 16),
+                        _buildResultMessage(result, errorMessage),
+                      ],
+                    ),
+                  ),
+                )
               ],
             ),
-      bottomNavigationBar: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: _buildMessage(result, errorMessage),
-      ),
     );
   }
 
-  Widget _buildEmotionGraph(EmotionResult? result) {
-    final emotions = result?.probabilities ?? {};
-    final emotionList = [
-      'happy',
-      'sad',
-      'angry',
-      'surprised',
-      'disgust',
-      'fear',
-      'neutral'
-    ];
-
-    return Padding(
-      padding: const EdgeInsets.all(12.0),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: emotionList.map((emotion) {
-          final value = (emotions[emotion] ?? 0.0);
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  emotion[0].toUpperCase() + emotion.substring(1),
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                LinearProgressIndicator(
-                  value: value,
-                  backgroundColor: Colors.grey.shade300,
-                  color: Colors.deepPurple,
-                  minHeight: 12,
-                ),
-                Text('${(value * 100).toStringAsFixed(1)}%'),
-              ],
-            ),
-          );
-        }).toList(),
-      ),
-    );
-  }
-
-  Widget _buildMessage(EmotionResult? result, String? error) {
+  Widget _buildResultMessage(EmotionResult? result, String? error) {
     if (error != null && error.isNotEmpty) {
       return Text(error,
-          style: const TextStyle(color: Colors.redAccent, fontSize: 16));
+          style: GoogleFonts.poppins(
+              color: Colors.redAccent,
+              fontSize: 16,
+              fontWeight: FontWeight.w500));
     } else if (result != null) {
       return Text(
         '감정: ${result.topEmotion} (${(result.confidence * 100).toStringAsFixed(1)}%)',
-        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        style: GoogleFonts.poppins(
+            color: Colors.black87, fontSize: 16, fontWeight: FontWeight.w600),
       );
     } else {
-      return const Text('분석 중...',
-          style: TextStyle(color: Colors.black54, fontSize: 15));
+      return Text('분석 중...',
+          style: GoogleFonts.poppins(color: Colors.grey, fontSize: 16));
     }
   }
 }
