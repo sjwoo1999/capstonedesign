@@ -1,11 +1,10 @@
+// 📂 lib/screens/realtime_camera_screen.dart
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-
 import '../models/emotion_result.dart';
 import '../providers/emotion_provider.dart';
 import '../services/emotion_api_service.dart';
@@ -22,7 +21,6 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
   bool _isDetecting = false;
   bool _isCameraInitialized = false;
   late EmotionAPIService _apiService;
-
   int _analysisAttempts = 0;
 
   @override
@@ -38,7 +36,6 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
       (camera) => camera.lensDirection == CameraLensDirection.front,
       orElse: () => cameras.first,
     );
-
     _controller = CameraController(frontCamera, ResolutionPreset.medium);
     await _controller!.initialize();
     if (!mounted) return;
@@ -57,27 +54,21 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
         final resultMap = await _apiService.sendImageForAnalysis(base64Image);
 
         if (resultMap.containsKey('error')) {
-          // ❌ 얼굴 인식 실패
           if (mounted) {
             context
                 .read<EmotionProvider>()
-                .setError('얼굴이 인식되지 않았어요. 화면을 바라봐 주세요.');
+                .setError('👀 얼굴이 인식되지 않았어요. 화면을 바라봐 주세요.');
           }
-          debugPrint(
-              '❌ 분석 실패[시도 $_analysisAttempts회] → No face detected @ ${DateTime.now()}');
         } else {
-          // ✅ 감정 분석 성공
           final result = EmotionResult.fromApi(resultMap);
           if (mounted) {
             context.read<EmotionProvider>()
               ..clearError()
               ..setResult(result);
           }
-          debugPrint(
-              '✅ 분석 성공[시도 $_analysisAttempts회] → ${result.topEmotion} (${(result.confidence * 100).toStringAsFixed(1)}%)');
         }
       } catch (e) {
-        debugPrint("❌ 분석 예외[시도 $_analysisAttempts회]: $e");
+        debugPrint("❌ 분석 예외[시도 $_analysisAttempts]: $e");
       } finally {
         await Future.delayed(const Duration(milliseconds: 500));
         _isDetecting = false;
@@ -100,14 +91,12 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
       convertedImage = gray;
     } else if (image.format.group == ImageFormatGroup.bgra8888) {
       final bytes = image.planes[0].bytes;
-
       final buffer = img.Image.fromBytes(
         width: image.width,
         height: image.height,
         bytes: bytes.buffer,
         order: img.ChannelOrder.bgra,
       );
-
       convertedImage = img.grayscale(buffer);
     } else {
       throw Exception("Unsupported image format: ${image.format.group}");
@@ -138,30 +127,72 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
     final errorMessage = context.watch<EmotionProvider>().errorMessage;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('실시간 감정 분석')),
+      appBar: AppBar(
+        title: const Text('Realtime Emotion'),
+        leading: BackButton(),
+        backgroundColor: Colors.deepPurple,
+        foregroundColor: Colors.white,
+      ),
       body: !_isCameraInitialized
           ? const Center(child: CircularProgressIndicator())
-          : Stack(
+          : Row(
               children: [
-                CameraPreview(_controller!),
-                Positioned(
-                  bottom: 30,
-                  left: 0,
-                  right: 0,
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.black87,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: _buildMessage(result, errorMessage),
-                    ),
-                  ),
+                Expanded(
+                  flex: 2,
+                  child: CameraPreview(_controller!),
+                ),
+                Expanded(
+                  flex: 1,
+                  child: _buildEmotionGraph(result),
                 ),
               ],
             ),
+      bottomNavigationBar: Padding(
+        padding: const EdgeInsets.all(12.0),
+        child: _buildMessage(result, errorMessage),
+      ),
+    );
+  }
+
+  Widget _buildEmotionGraph(EmotionResult? result) {
+    final emotions = result?.probabilities ?? {};
+    final emotionList = [
+      'happy',
+      'sad',
+      'angry',
+      'surprised',
+      'disgust',
+      'fear',
+      'neutral'
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.all(12.0),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: emotionList.map((emotion) {
+          final value = (emotions[emotion] ?? 0.0);
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  emotion[0].toUpperCase() + emotion.substring(1),
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                LinearProgressIndicator(
+                  value: value,
+                  backgroundColor: Colors.grey.shade300,
+                  color: Colors.deepPurple,
+                  minHeight: 12,
+                ),
+                Text('${(value * 100).toStringAsFixed(1)}%'),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
     );
   }
 
@@ -172,11 +203,11 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
     } else if (result != null) {
       return Text(
         '감정: ${result.topEmotion} (${(result.confidence * 100).toStringAsFixed(1)}%)',
-        style: const TextStyle(color: Colors.white, fontSize: 18),
+        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
       );
     } else {
       return const Text('분석 중...',
-          style: TextStyle(color: Colors.white70, fontSize: 16));
+          style: TextStyle(color: Colors.black54, fontSize: 15));
     }
   }
 }

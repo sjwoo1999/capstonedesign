@@ -1,7 +1,7 @@
 class EmotionResult {
   final Map<String, double> probabilities;
   final String feedback;
-  final String? errorMessage; // ✅ 실패 메시지 추가
+  final String? errorMessage;
 
   EmotionResult({
     required this.probabilities,
@@ -33,13 +33,14 @@ class EmotionResult {
       );
     }
 
-    final topEmotion = json['emotion'];
-    final confidence = (json['confidence'] as num).toDouble();
+    // ✅ 전체 확률 맵 사용
+    final Map<String, dynamic> rawProbs = json['probabilities'] ?? {};
+    final probabilities = rawProbs.map(
+      (k, v) => MapEntry(k.toLowerCase(), (v as num).toDouble()),
+    );
 
     return EmotionResult(
-      probabilities: {
-        topEmotion: confidence,
-      },
+      probabilities: probabilities,
       feedback: '',
     );
   }

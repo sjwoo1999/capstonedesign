@@ -1,5 +1,3 @@
-# capstonedesign-model/realtime_emotion_api.py
-
 from flask import Flask, request, jsonify
 import numpy as np
 import cv2
@@ -12,7 +10,6 @@ app = Flask(__name__)
 # 모델 로드
 emotion_model = load_model("models/emotion_model.h5", compile=False)
 face_detector = dlib.get_frontal_face_detector()
-# landmark_predictor = dlib.shape_predictor("models/shape_predictor_68_face_landmarks.dat")  # 현재 미사용
 expression_labels = ['Angry', 'Disgust', 'Fear', 'Happy', 'Sad', 'Surprise', 'Neutral']
 
 def preprocess_face(image):
@@ -47,16 +44,23 @@ def predict():
 
     try:
         preds = emotion_model.predict(face)[0]
-        emotion_idx = np.argmax(preds)
+        emotion_idx = int(np.argmax(preds))
         emotion_label = expression_labels[emotion_idx]
         confidence = float(preds[emotion_idx])
+        
+        # ✅ 감정별 확률 추가
+        probabilities = {
+            expression_labels[i]: float(preds[i]) for i in range(len(preds))
+        }
+
+        return jsonify({
+            'emotion': emotion_label,
+            'confidence': confidence,
+            'probabilities': probabilities
+        })
+
     except Exception as e:
         return jsonify({'error': f'Model inference failed: {str(e)}'}), 500
-
-    return jsonify({
-        'emotion': emotion_label,
-        'confidence': confidence
-    })
 
 if __name__ == '__main__':
     print("🚀 Flask API 서버 실행 중... (http://0.0.0.0:5001)")
