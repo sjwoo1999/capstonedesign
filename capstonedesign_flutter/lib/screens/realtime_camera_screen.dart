@@ -8,7 +8,28 @@ import '../models/emotion_result.dart';
 import '../providers/emotion_provider.dart';
 import '../services/emotion_api_services.dart';
 import '../widgets/emotion_chart.dart';
-import '../constants/emotion_constants.dart'; // ✅ 추가
+
+/// 감정에 따른 자연스러운 UX 문구 매핑
+const Map<String, String> emotionNicknameMap = {
+  'neutral': '차분해 보여요 🌿',
+  'sad': '조금 우울해요 🌧️',
+  'fear': '조금 불안해 보여요 😨',
+  'surprise': '놀라고 있어요 😲',
+  'angry': '화가 난 것 같아요 🔥',
+  'disgust': '싫어하는 표정이에요 🤢',
+  'happy': '기분이 좋아 보여요 😊',
+};
+
+/// 감정 + 이모지 매핑 (EmotionChart에서 사용)
+const Map<String, String> emotionLabelMap = {
+  'neutral': '😊 중립',
+  'happy': '😁 행복',
+  'sad': '😢 슬픔',
+  'angry': '😠 분노',
+  'fear': '😨 두려움',
+  'disgust': '🤢 혐오',
+  'surprise': '😲 놀람',
+};
 
 class RealtimeCameraScreen extends StatefulWidget {
   const RealtimeCameraScreen({super.key});
@@ -25,7 +46,7 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
   int _retryCount = 0;
   static const int _maxRetries = 3;
   DateTime _lastAnalyzed = DateTime.now();
-  static const Duration frameInterval = Duration(milliseconds: 1000);
+  static const Duration frameInterval = Duration(milliseconds: 1000); // 1초 간격
 
   @override
   void initState() {
@@ -205,26 +226,37 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
         ),
       );
     } else if (result != null) {
-      final nickname = emotionNicknameMap[result.topEmotion] ?? result.topEmotion;
-      final color = emotionColorMap[result.topEmotion] ?? Colors.black87;
+      final top = result.topEmotion;
+      final emojiLabel = emotionLabelMap[top] ?? top;
+      final nickname = emotionNicknameMap[top] ?? '';
 
-      return Text(
-        '$nickname\n(${(result.confidence * 100).toStringAsFixed(1)}%)',
-        textAlign: TextAlign.center,
-        style: GoogleFonts.poppins(
-          color: color,
-          fontSize: 17,
-          fontWeight: FontWeight.w600,
-        ),
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            nickname,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.poppins(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '감정: $emojiLabel (${(result.confidence * 100).toStringAsFixed(1)}%)',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.poppins(
+              fontSize: 14,
+              color: Colors.grey.shade600,
+            ),
+          ),
+        ],
       );
     } else {
       return Text(
         '분석 중...',
-        textAlign: TextAlign.center,
-        style: GoogleFonts.poppins(
-          color: Colors.grey,
-          fontSize: 15,
-        ),
+        style: GoogleFonts.poppins(color: Colors.grey, fontSize: 15),
       );
     }
   }
