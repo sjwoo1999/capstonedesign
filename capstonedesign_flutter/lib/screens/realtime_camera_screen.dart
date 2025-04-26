@@ -8,6 +8,7 @@ import '../models/emotion_result.dart';
 import '../providers/emotion_provider.dart';
 import '../services/emotion_api_services.dart';
 import '../widgets/emotion_chart.dart';
+import '../constants/emotion_constants.dart'; // ✅ 추가
 
 class RealtimeCameraScreen extends StatefulWidget {
   const RealtimeCameraScreen({super.key});
@@ -24,7 +25,7 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
   int _retryCount = 0;
   static const int _maxRetries = 3;
   DateTime _lastAnalyzed = DateTime.now();
-  static const Duration frameInterval = Duration(milliseconds: 1000); // 1초 간격
+  static const Duration frameInterval = Duration(milliseconds: 1000);
 
   @override
   void initState() {
@@ -204,18 +205,26 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
         ),
       );
     } else if (result != null) {
+      final nickname = emotionNicknameMap[result.topEmotion] ?? result.topEmotion;
+      final color = emotionColorMap[result.topEmotion] ?? Colors.black87;
+
       return Text(
-        '감정: ${result.topEmotion} (${(result.confidence * 100).toStringAsFixed(1)}%)',
+        '$nickname\n(${(result.confidence * 100).toStringAsFixed(1)}%)',
+        textAlign: TextAlign.center,
         style: GoogleFonts.poppins(
-          color: Colors.black87,
-          fontSize: 16,
+          color: color,
+          fontSize: 17,
           fontWeight: FontWeight.w600,
         ),
       );
     } else {
       return Text(
         '분석 중...',
-        style: GoogleFonts.poppins(color: Colors.grey, fontSize: 15),
+        textAlign: TextAlign.center,
+        style: GoogleFonts.poppins(
+          color: Colors.grey,
+          fontSize: 15,
+        ),
       );
     }
   }
