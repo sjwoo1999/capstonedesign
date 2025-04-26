@@ -19,9 +19,12 @@ class RealtimeCameraScreen extends StatefulWidget {
 class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
   CameraController? _controller;
   bool _isCameraInitialized = false;
+  bool _isAnalyzing = false;
   late EmotionAPIService _apiService;
   int _retryCount = 0;
   static const int _maxRetries = 3;
+  DateTime _lastAnalyzed = DateTime.now();
+  static const Duration frameInterval = Duration(milliseconds: 1000); // 1초 간격
 
   @override
   void initState() {
@@ -47,7 +50,13 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
   void _startImageStream() {
     _controller?.startImageStream((CameraImage image) async {
       if (!mounted) return;
+      if (_isAnalyzing) return;
 
+      final now = DateTime.now();
+      if (now.difference(_lastAnalyzed) < frameInterval) return;
+      _lastAnalyzed = now;
+
+      _isAnalyzing = true;
       final provider = context.read<EmotionProvider>();
       provider.startCameraAnalysis();
 
@@ -60,7 +69,7 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
         } else {
           provider.clearError();
           provider.setResultFromApi(resultMap);
-          _retryCount = 0; // 성공했으니 재시도 횟수 초기화
+          _retryCount = 0;
         }
       } catch (e) {
         _retryCount++;
@@ -71,7 +80,7 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
         debugPrint('❌ 분석 실패: $e');
       } finally {
         provider.endCameraAnalysis();
-        await Future.delayed(const Duration(milliseconds: 500));
+        _isAnalyzing = false;
       }
     });
   }
@@ -142,51 +151,42 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
       ),
       body: !_isCameraInitialized
           ? const Center(child: CircularProgressIndicator())
-          : Stack(
+          : Row(
               children: [
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 6,
-                      child: AspectRatio(
-                        aspectRatio: _controller!.value.aspectRatio,
-                        child: CameraPreview(_controller!),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 4,
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: EmotionChart(
-                                probabilities: result?.probabilities ?? {},
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            _buildResultMessage(result, errorMessage),
-                            const SizedBox(height: 12),
-                            Text(
-                              '🙌 영상은 저장되지 않아요.\n표정 데이터만 분석돼요.',
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.poppins(
-                                color: Colors.grey.shade600,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                if (provider.isAnalyzingCamera)
-                  Container(
-                    color: Colors.black.withOpacity(0.3),
-                    child: const Center(child: CircularProgressIndicator()),
+                Expanded(
+                  flex: 6,
+                  child: AspectRatio(
+                    aspectRatio: _controller!.value.aspectRatio,
+                    child: CameraPreview(_controller!),
                   ),
+                ),
+                Expanded(
+                  flex: 4,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Expanded(
+                          child: EmotionChart(
+                            probabilities: result?.probabilities ?? {},
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        _buildResultMessage(result, errorMessage),
+                        const SizedBox(height: 12),
+                        Text(
+                          '🙌 영상은 저장되지 않아요.\n표정 데이터만 분석돼요.',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.poppins(
+                            color: Colors.grey.shade600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
     );
