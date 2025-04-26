@@ -3,7 +3,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'realtime_camera_screen.dart';
 import 'history_screen.dart';
-import '../providers/emotion_provider.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -11,7 +10,7 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
+    final size = MediaQuery.of(context).size;
 
     return Scaffold(
       appBar: AppBar(
@@ -23,78 +22,88 @@ class HomeScreen extends StatelessWidget {
           ),
         ),
         centerTitle: true,
+        elevation: 0,
+        backgroundColor: Colors.transparent,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
+      extendBodyBehindAppBar: true,
+      body: Container(
+        width: double.infinity,
+        height: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              Color(0xFFEAE6FB),
+              Color(0xFFF7F5FB),
+            ],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
         child: Center(
           child: SingleChildScrollView(
-            child: Card(
-              elevation: 5,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              color: Colors.white,
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.thermostat, color: Colors.deepPurple, size: 40),
-                    const SizedBox(height: 12),
-                    Text(
-                      "지금 내 마음의 온도는?",
-                      style: GoogleFonts.notoSans(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.camera_alt_outlined),
-                      label: Text(
-                        "표정으로 분석 시작하기",
-                        style:
-                            GoogleFonts.notoSans(fontWeight: FontWeight.w500),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.deepPurple,
-                        side: const BorderSide(color: Colors.deepPurple),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 24, vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => const RealtimeCameraScreen()),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 20),
-                    TextButton.icon(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => HistoryScreen()),
-                        );
-                      },
-                      icon: const Icon(Icons.history, size: 18),
-                      label: Text(
-                        '분석 히스토리 보기',
-                        style: GoogleFonts.notoSans(
-                          color: Colors.grey.shade700,
-                          fontSize: 14,
-                        ),
-                      ),
-                    ),
-                  ],
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  "지금 내 마음의 온도는?",
+                  style: GoogleFonts.notoSans(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black87,
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-              ),
+                const SizedBox(height: 20),
+                const Icon(Icons.thermostat, size: 48, color: Colors.deepPurple),
+                const SizedBox(height: 40),
+                SizedBox(
+                  width: size.width * 0.8,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const RealtimeCameraScreen(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.camera_alt_outlined),
+                    label: const Text('표정으로 분석 시작하기'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.deepPurple,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      textStyle: GoogleFonts.notoSans(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                TextButton.icon(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => HistoryScreen(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.history, size: 18),
+                  label: Text(
+                    '분석 히스토리 보기',
+                    style: GoogleFonts.notoSans(
+                      color: Colors.grey.shade700,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
