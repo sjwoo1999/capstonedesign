@@ -19,6 +19,7 @@ dependencies:
   fl_chart: ^0.63.0
   flutter_dotenv: ^5.2.1
   google_fonts: ^6.2.1
+  flutter_launcher_icons: ^0.14.3
 
 dev_dependencies:
   flutter_test:
@@ -31,3 +32,10 @@ flutter:
     - assets/mobilenet_v2_1.0_224.tflite
     - assets/model.tflite
     - .env
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/logo_1024.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/icon/logo_1024.png"
