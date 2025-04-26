@@ -1,17 +1,36 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
+
 import 'providers/emotion_provider.dart';
 import 'screens/home_screen.dart';
+import 'services/emotion_api_services.dart';
+import 'services/server_discovery_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // ✅ .env 로드
   try {
     await dotenv.load(fileName: ".env");
     print("✅ .env loaded: ${dotenv.env['EMOTION_API_URL']}");
   } catch (e) {
-    print("❌ .env loading failed: $e");
+    print("❌ .env 로드 실패: $e");
+  }
+
+  // ✅ 서버 탐색 → 성공 시 API URL 설정
+  try {
+    final serverUrl = await ServerDiscoveryService.findServer();
+
+    if (serverUrl != null) {
+      EmotionAPIService.setBaseUrl(serverUrl);
+    } else {
+      print('❌ 서버를 찾을 수 없습니다.');
+      EmotionAPIService.setBaseUrl(dotenv.env['EMOTION_API_URL'] ?? 'http://127.0.0.1:5001');
+    }
+  } catch (e) {
+    print('⚠️ 서버 탐색 중 예외 발생: $e');
+    EmotionAPIService.setBaseUrl(dotenv.env['EMOTION_API_URL'] ?? 'http://127.0.0.1:5001');
   }
 
   runApp(

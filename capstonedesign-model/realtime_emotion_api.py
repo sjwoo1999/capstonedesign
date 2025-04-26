@@ -4,6 +4,7 @@ import cv2
 import base64
 from keras.models import load_model
 import dlib
+import socket  # ✅ 추가 (IP 조회용)
 
 app = Flask(__name__)
 
@@ -48,7 +49,6 @@ def predict():
         emotion_label = expression_labels[emotion_idx]
         confidence = float(preds[emotion_idx])
         
-        # ✅ 감정별 확률 추가
         probabilities = {
             expression_labels[i]: float(preds[i]) for i in range(len(preds))
         }
@@ -61,6 +61,12 @@ def predict():
 
     except Exception as e:
         return jsonify({'error': f'Model inference failed: {str(e)}'}), 500
+
+# ✅ 서버 IP를 알려주는 엔드포인트 추가
+@app.route('/whoami', methods=['GET'])
+def whoami():
+    ip_address = socket.gethostbyname(socket.gethostname())
+    return jsonify({'ip': ip_address})
 
 if __name__ == '__main__':
     print("🚀 Flask API 서버 실행 중... (http://0.0.0.0:5001)")

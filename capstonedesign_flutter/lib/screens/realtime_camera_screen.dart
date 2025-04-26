@@ -1,15 +1,12 @@
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_fonts/google_fonts.dart';
-
 import '../models/emotion_result.dart';
 import '../providers/emotion_provider.dart';
-import '../services/emotion_api_service.dart';
+import '../services/emotion_api_services.dart';
 import '../widgets/emotion_chart.dart';
 
 class RealtimeCameraScreen extends StatefulWidget {
@@ -21,10 +18,10 @@ class RealtimeCameraScreen extends StatefulWidget {
 
 class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
   CameraController? _controller;
-  bool _isDetecting = false;
   bool _isCameraInitialized = false;
   late EmotionAPIService _apiService;
-  int _analysisAttempts = 0;
+  int _retryCount = 0;
+  static const int _maxRetries = 3;
 
   @override
   void initState() {
@@ -49,34 +46,32 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
 
   void _startImageStream() {
     _controller?.startImageStream((CameraImage image) async {
-      if (_isDetecting || !_controller!.value.isStreamingImages) return;
-      _isDetecting = true;
+      if (!mounted) return;
+
+      final provider = context.read<EmotionProvider>();
+      provider.startCameraAnalysis();
 
       try {
-        _analysisAttempts++;
         final base64Image = await _convertToBase64(image);
         final resultMap = await _apiService.sendImageForAnalysis(base64Image);
 
-        if (mounted) {
-          final provider = context.read<EmotionProvider>();
-          if (resultMap.containsKey('error')) {
-            provider.setError('👀 얼굴이 인식되지 않았어요. 화면을 바라봐 주세요.');
-            debugPrint(
-                '❌ 분석 실패[$_analysisAttempts회] → No face detected @ ${DateTime.now()}');
-          } else {
-            final result = EmotionResult.fromApi(resultMap);
-            provider
-              ..clearError()
-              ..setResult(result);
-            debugPrint(
-                '✅ 분석 성공[$_analysisAttempts회] → ${result.topEmotion} (${(result.confidence * 100).toStringAsFixed(1)}%)');
-          }
+        if (resultMap.containsKey('error')) {
+          provider.setError('👀 얼굴이 인식되지 않았어요.\n화면을 바라봐 주세요.');
+        } else {
+          provider.clearError();
+          provider.setResultFromApi(resultMap);
+          _retryCount = 0; // 성공했으니 재시도 횟수 초기화
         }
       } catch (e) {
-        debugPrint("❌ 분석 예외[$_analysisAttempts회]: $e");
+        _retryCount++;
+        if (_retryCount >= _maxRetries) {
+          provider.setError('서버 연결에 실패했어요.\n잠시 후 다시 시도해 주세요.');
+          _controller?.stopImageStream();
+        }
+        debugPrint('❌ 분석 실패: $e');
       } finally {
+        provider.endCameraAnalysis();
         await Future.delayed(const Duration(milliseconds: 500));
-        _isDetecting = false;
       }
     });
   }
@@ -128,14 +123,14 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final result = context.watch<EmotionProvider>().result;
-    final errorMessage = context.watch<EmotionProvider>().errorMessage;
+    final provider = context.watch<EmotionProvider>();
+    final result = provider.result;
+    final errorMessage = provider.errorMessage;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F6FA),
       appBar: AppBar(
-        title: Text("실시간 감정 분석",
-            style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+        title: Text("실시간 감정 분석", style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
         centerTitle: true,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black87,
@@ -147,44 +142,51 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
       ),
       body: !_isCameraInitialized
           ? const Center(child: CircularProgressIndicator())
-          : Row(
+          : Stack(
               children: [
-                Expanded(
-                  flex: 6,
-                  child: AspectRatio(
-                    aspectRatio: _controller!.value.aspectRatio,
-                    child: CameraPreview(_controller!),
-                  ),
-                ),
-                Expanded(
-                  flex: 4,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 20),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: EmotionChart(
-                              probabilities: result?.probabilities ?? {}),
-                        ),
-                        const SizedBox(height: 12),
-                        _buildResultMessage(result, errorMessage),
-                        const SizedBox(height: 12),
-
-                        // ✅ 새로 추가된 UX 메시지
-                        Text(
-                          '🙌 영상은 저장되지 않아요.\n표정 데이터만 분석돼요.',
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.poppins(
-                            color: Colors.grey.shade600,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 6,
+                      child: AspectRatio(
+                        aspectRatio: _controller!.value.aspectRatio,
+                        child: CameraPreview(_controller!),
+                      ),
                     ),
+                    Expanded(
+                      flex: 4,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Expanded(
+                              child: EmotionChart(
+                                probabilities: result?.probabilities ?? {},
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            _buildResultMessage(result, errorMessage),
+                            const SizedBox(height: 12),
+                            Text(
+                              '🙌 영상은 저장되지 않아요.\n표정 데이터만 분석돼요.',
+                              textAlign: TextAlign.center,
+                              style: GoogleFonts.poppins(
+                                color: Colors.grey.shade600,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (provider.isAnalyzingCamera)
+                  Container(
+                    color: Colors.black.withOpacity(0.3),
+                    child: const Center(child: CircularProgressIndicator()),
                   ),
-                )
               ],
             ),
     );
@@ -192,20 +194,29 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
 
   Widget _buildResultMessage(EmotionResult? result, String? error) {
     if (error != null && error.isNotEmpty) {
-      return Text(error,
-          style: GoogleFonts.poppins(
-              color: Colors.redAccent,
-              fontSize: 16,
-              fontWeight: FontWeight.w500));
+      return Text(
+        error,
+        textAlign: TextAlign.center,
+        style: GoogleFonts.poppins(
+          color: Colors.redAccent,
+          fontSize: 15,
+          fontWeight: FontWeight.w500,
+        ),
+      );
     } else if (result != null) {
       return Text(
         '감정: ${result.topEmotion} (${(result.confidence * 100).toStringAsFixed(1)}%)',
         style: GoogleFonts.poppins(
-            color: Colors.black87, fontSize: 16, fontWeight: FontWeight.w600),
+          color: Colors.black87,
+          fontSize: 16,
+          fontWeight: FontWeight.w600,
+        ),
       );
     } else {
-      return Text('분석 중...',
-          style: GoogleFonts.poppins(color: Colors.grey, fontSize: 16));
+      return Text(
+        '분석 중...',
+        style: GoogleFonts.poppins(color: Colors.grey, fontSize: 15),
+      );
     }
   }
 }
