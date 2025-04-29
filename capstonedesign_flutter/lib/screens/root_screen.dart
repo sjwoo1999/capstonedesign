@@ -1,8 +1,8 @@
 // lib/screens/root_screen.dart
 import 'package:flutter/material.dart';
 import 'home/home_screen.dart';
-import 'record/record_screen.dart';
-import 'history/history_screen.dart';
+import 'social/social_screen.dart'; // ✅ 새로 추가 예정
+import 'report/report_screen.dart'; // ✅ 새로 추가 예정
 import 'settings/settings_screen.dart';
 
 class RootScreen extends StatefulWidget {
@@ -17,8 +17,8 @@ class _RootScreenState extends State<RootScreen> {
 
   final List<Widget> _screens = const [
     HomeScreen(),
-    RecordScreen(),
-    HistoryScreen(),
+    SocialScreen(),
+    ReportScreen(),
     SettingsScreen(),
   ];
 
@@ -47,12 +47,12 @@ class _RootScreenState extends State<RootScreen> {
             label: '홈',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.camera_alt),
-            label: '기록',
+            icon: Icon(Icons.people_alt),
+            label: '소셜',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.history),
-            label: '히스토리',
+            icon: Icon(Icons.bar_chart),
+            label: '리포트',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.settings),
