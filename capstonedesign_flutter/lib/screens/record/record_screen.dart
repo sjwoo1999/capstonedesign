@@ -1,4 +1,3 @@
-// lib/screens/record/record_screen.dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
@@ -6,9 +5,8 @@ import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
 import '../../providers/emotion_provider.dart';
 import '../../services/emotion_api_services.dart';
-import '../../constants/emotion_constants.dart';
 import '../../models/emotion_result.dart';
-import '../session/session_result_screen.dart'; // ✅ 수정 포인트!
+import '../session/session_result_screen.dart'; // 수정: 결과 화면 이동
 
 class RecordScreen extends StatefulWidget {
   const RecordScreen({super.key});
@@ -28,7 +26,15 @@ class _RecordScreenState extends State<RecordScreen> {
   @override
   void initState() {
     super.initState();
-    _apiService = EmotionAPIService();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startSessionAndCamera(); // 렌더링 끝난 후 안전하게 호출
+    });
+  }
+
+  Future<void> _startSessionAndCamera() async {
+    final provider = context.read<EmotionProvider>();
+    provider.startSession();
+    await _initializeCamera();
   }
 
   Future<void> _initializeCamera() async {
@@ -116,12 +122,6 @@ class _RecordScreenState extends State<RecordScreen> {
     return base64Encode(jpg);
   }
 
-  void _startSession() async {
-    final provider = context.read<EmotionProvider>();
-    provider.startSession();
-    await _initializeCamera();
-  }
-
   void _endSession() {
     final provider = context.read<EmotionProvider>();
     final result = provider.endSession();
@@ -129,7 +129,7 @@ class _RecordScreenState extends State<RecordScreen> {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (context) => SessionResultScreen(result: result), // ✅ 수정 포인트
+        builder: (context) => SessionResultScreen(result: result), // ✅ SessionResultScreen으로 이동
       ),
     );
   }
@@ -142,17 +142,10 @@ class _RecordScreenState extends State<RecordScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isSessionActive = context.watch<EmotionProvider>().isSessionActive;
-
     return Scaffold(
       appBar: AppBar(title: const Text('감정 분석')),
       body: !_isCameraInitialized
-          ? Center(
-              child: ElevatedButton(
-                onPressed: _startSession,
-                child: const Text('분석 시작'),
-              ),
-            )
+          ? const Center(child: CircularProgressIndicator()) // ✅ 로딩 상태 보여주기
           : Column(
               children: [
                 Expanded(
@@ -176,7 +169,7 @@ class _RecordScreenState extends State<RecordScreen> {
                       ),
                     ),
                   ),
-                )
+                ),
               ],
             ),
     );
