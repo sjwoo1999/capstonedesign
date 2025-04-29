@@ -1,44 +1,24 @@
+// lib/screens/record/record_screen.dart
 import 'dart:convert';
-import 'package:camera/camera.dart';
-import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
+import 'package:flutter/material.dart';
+import 'package:camera/camera.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../models/emotion_result.dart';
-import '../providers/emotion_provider.dart';
-import '../services/emotion_api_services.dart';
-import '../widgets/emotion_chart.dart';
+import '../../constants/emotion_constants.dart'; // ✅ emotionLabelMap, emotionNicknameMap 제공
+import '../../components/emotion_chart.dart';    // ✅ EmotionChart 위젯
+import '../../models/emotion_result.dart';       // ✅ EmotionResult 데이터 모델
+import '../../providers/emotion_provider.dart';  // ✅ 상태관리 Provider
+import '../../services/emotion_api_services.dart'; // ✅ API 통신
 
-/// 감정에 따른 자연스러운 UX 문구 매핑
-const Map<String, String> emotionNicknameMap = {
-  'neutral': '차분해 보여요 🌿',
-  'sad': '조금 우울해요 🌧️',
-  'fear': '조금 불안해 보여요 😨',
-  'surprise': '놀라고 있어요 😲',
-  'angry': '화가 난 것 같아요 🔥',
-  'disgust': '싫어하는 표정이에요 🤢',
-  'happy': '기분이 좋아 보여요 😊',
-};
-
-/// 감정 + 이모지 매핑 (EmotionChart에서 사용)
-const Map<String, String> emotionLabelMap = {
-  'neutral': '😊 중립',
-  'happy': '😁 행복',
-  'sad': '😢 슬픔',
-  'angry': '😠 분노',
-  'fear': '😨 두려움',
-  'disgust': '🤢 혐오',
-  'surprise': '😲 놀람',
-};
-
-class RealtimeCameraScreen extends StatefulWidget {
-  const RealtimeCameraScreen({super.key});
+class RecordScreen extends StatefulWidget {
+  const RecordScreen({super.key});
 
   @override
-  State<RealtimeCameraScreen> createState() => _RealtimeCameraScreenState();
+  State<RecordScreen> createState() => _RecordScreenState();
 }
 
-class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
+class _RecordScreenState extends State<RecordScreen> {
   CameraController? _controller;
   bool _isCameraInitialized = false;
   bool _isAnalyzing = false;
@@ -46,7 +26,7 @@ class _RealtimeCameraScreenState extends State<RealtimeCameraScreen> {
   int _retryCount = 0;
   static const int _maxRetries = 3;
   DateTime _lastAnalyzed = DateTime.now();
-  static const Duration frameInterval = Duration(milliseconds: 1000); // 1초 간격
+  static const Duration frameInterval = Duration(milliseconds: 1000);
 
   @override
   void initState() {

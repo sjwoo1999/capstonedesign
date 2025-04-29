@@ -1,6 +1,6 @@
+// lib/constants/emotion_constants.dart
 import 'package:flutter/material.dart';
 
-/// 감정별 닉네임 + 이모지 매핑
 const Map<String, String> emotionNicknameMap = {
   'neutral': '차분해 보여요 🌿',
   'sad': '조금 우울해요 🌧️',
@@ -11,7 +11,6 @@ const Map<String, String> emotionNicknameMap = {
   'happy': '기분이 좋아 보여요 😊',
 };
 
-/// 감정별 색상 매핑
 const Map<String, Color> emotionColorMap = {
   'neutral': Color(0xFFA0AEC0),
   'sad': Color(0xFF3182CE),
@@ -20,4 +19,14 @@ const Map<String, Color> emotionColorMap = {
   'angry': Color(0xFFE53E3E),
   'disgust': Color(0xFF48BB78),
   'happy': Color(0xFFECC94B),
+};
+
+const Map<String, String> emotionLabelMap = {
+  'neutral': '중립',
+  'happy': '행복',
+  'sad': '슬픔',
+  'angry': '분노',
+  'fear': '두려움',
+  'disgust': '혐오',
+  'surprise': '놀람',
 };

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import 'realtime_camera_screen.dart';
-import 'history_screen.dart';
+import '../record/record_screen.dart';
+import '../history/history_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -64,7 +64,7 @@ class HomeScreen extends StatelessWidget {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => const RealtimeCameraScreen(),
+                          builder: (_) => const RecordScreen(),
                         ),
                       );
                     },
