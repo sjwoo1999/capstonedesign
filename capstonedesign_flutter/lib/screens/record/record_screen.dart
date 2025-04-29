@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
+import '../record/record_screen.dart';
 import '../../providers/emotion_provider.dart';
 import '../../services/emotion_api_services.dart';
 import '../../constants/emotion_constants.dart';
