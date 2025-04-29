@@ -1,6 +1,6 @@
 // lib/screens/home/home_screen.dart
 import 'package:flutter/material.dart';
-import '../record/record_screen.dart'; // 분석 시작 시 이동할 화면
+import '../record/record_screen.dart'; // 분석 시작 화면 이동용
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -14,28 +14,34 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final isLandscape = size.width > size.height;
+    final isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
 
     final descriptionSection = Column(
       mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Icon(Icons.emoji_emotions, size: 80, color: Colors.deepPurple),
-        const SizedBox(height: 16),
+        const Icon(
+          Icons.emoji_emotions,
+          size: 80,
+          color: Colors.deepPurple,
+        ),
+        const SizedBox(height: 24),
         const Text(
           '마음 상태를 한눈에 분석해드립니다.',
           style: TextStyle(
-            fontSize: 22,
+            fontSize: 24,
             fontWeight: FontWeight.bold,
+            color: Colors.black87,
           ),
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: 8),
-        Text(
-          '카메라를 보며 감정을 기록하고\n분석된 결과를 확인하세요.',
+        const SizedBox(height: 12),
+        const Text(
+          '카메라를 바라보며 감정을 기록하고\n분석 결과를 확인하세요.',
           style: TextStyle(
             fontSize: 16,
-            color: Colors.grey[600],
+            color: Colors.black54,
+            height: 1.4,
           ),
           textAlign: TextAlign.center,
         ),
@@ -60,9 +66,9 @@ class HomeScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        Text(
+        const Text(
           '🙌 분석 영상은 저장되지 않습니다.',
-          style: TextStyle(fontSize: 14, color: Colors.grey[600]),
+          style: TextStyle(fontSize: 14, color: Colors.grey),
           textAlign: TextAlign.center,
         ),
       ],
