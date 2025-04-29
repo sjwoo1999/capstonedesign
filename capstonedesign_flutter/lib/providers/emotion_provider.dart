@@ -7,9 +7,14 @@ class EmotionProvider with ChangeNotifier {
   String? errorMessage;
   bool isAnalyzing = false;
 
-  // 🆕 추가
+  // 🆕 세션 중 수집된 결과들
   List<EmotionResult> sessionResults = [];
+
+  // 🆕 분석 세션 활성화 여부
   bool isSessionActive = false;
+
+  // 🆕 전체 앱 실행 중 누적 기록 (메모리 기반)
+  List<EmotionResult> historyList = [];
 
   void startCameraAnalysis() {
     isAnalyzing = true;
@@ -46,9 +51,10 @@ class EmotionProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  // 🆕 세션 종료
+  // 🆕 세션 종료 → 평균 결과 반환
   EmotionResult endSession() {
     isSessionActive = false;
+
     if (sessionResults.isEmpty) {
       // 아무 데이터 없으면 neutral 리턴
       return EmotionResult(
@@ -64,6 +70,7 @@ class EmotionProvider with ChangeNotifier {
         feedback: '',
       );
     }
+
     // 평균 계산
     final Map<String, double> sum = {
       'happy': 0,
@@ -80,6 +87,18 @@ class EmotionProvider with ChangeNotifier {
       });
     }
     final avg = sum.map((key, value) => MapEntry(key, value / sessionResults.length));
-    return EmotionResult(probabilities: avg, feedback: '');
+
+    final sessionResult = EmotionResult(probabilities: avg, feedback: '');
+
+    // ✅ 세션이 끝날 때 평균 결과를 historyList에 저장
+    saveSessionResult(sessionResult);
+
+    return sessionResult;
+  }
+
+  // 🆕 세션 결과 저장 (메모리 누적)
+  void saveSessionResult(EmotionResult result) {
+    historyList.add(result);
+    notifyListeners();
   }
 }
