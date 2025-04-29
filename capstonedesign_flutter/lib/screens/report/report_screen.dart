@@ -1,90 +1,55 @@
 // lib/screens/report/report_screen.dart
+
 import 'package:flutter/material.dart';
-import '../../models/emotion_result.dart';
+import 'package:provider/provider.dart';
+import '../../providers/emotion_provider.dart';
 import '../../constants/emotion_constants.dart';
-import 'package:fl_chart/fl_chart.dart';
 
 class ReportScreen extends StatelessWidget {
-  final EmotionResult result;
-
-  const ReportScreen({super.key, required this.result});
+  const ReportScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final top = result.topEmotion;
-    final emoji = emotionLabelMap[top] ?? top;
-    final nickname = emotionNicknameMap[top] ?? '';
+    final historyList = context.watch<EmotionProvider>().historyList.reversed.toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('분석 결과')),
+      appBar: AppBar(title: const Text('과거 기록')),
       body: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const SizedBox(height: 16),
-            Text(
-              '감정 분석 결과',
-              style: Theme.of(context).textTheme.headline6,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              '$emoji  $nickname',
-              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '자신의 감정을 인식하는 것은 건강한 마음의 출발점입니다.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 14, color: Colors.grey[700]),
-            ),
-            const SizedBox(height: 32),
-            Expanded(child: _buildBarChart()),
-          ],
-        ),
-      ),
-    );
-  }
+        padding: const EdgeInsets.all(16.0),
+        child: historyList.isEmpty
+            ? const Center(
+                child: Text(
+                  '아직 기록된 분석이 없습니다.\n지금 바로 감정 분석을 시작해보세요!',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                ),
+              )
+            : ListView.builder(
+                itemCount: historyList.length,
+                itemBuilder: (context, index) {
+                  final result = historyList[index];
+                  final topEmotion = result.topEmotion;
+                  final emoji = emotionLabelMap[topEmotion] ?? '';
+                  final nickname = emotionNicknameMap[topEmotion] ?? topEmotion;
+                  final confidence = (result.probabilities[topEmotion]! * 100).toStringAsFixed(1);
 
-  Widget _buildBarChart() {
-    final sortedEntries = result.probabilities.entries.toList()
-      ..sort((a, b) => b.value.compareTo(a.value));
-
-    return BarChart(
-      BarChartData(
-        alignment: BarChartAlignment.spaceEvenly,
-        maxY: 1.0,
-        barTouchData: BarTouchData(enabled: false),
-        titlesData: FlTitlesData(
-          leftTitles: const AxisTitles(
-            sideTitles: SideTitles(showTitles: true, reservedSize: 28),
-          ),
-          bottomTitles: AxisTitles(
-            sideTitles: SideTitles(
-              showTitles: true,
-              getTitlesWidget: (value, meta) {
-                final index = value.toInt();
-                if (index < 0 || index >= sortedEntries.length) return const SizedBox.shrink();
-                return Text(emotionLabelMap[sortedEntries[index].key] ?? sortedEntries[index].key,
-                    style: const TextStyle(fontSize: 12));
-              },
-            ),
-          ),
-        ),
-        barGroups: List.generate(
-          sortedEntries.length,
-          (index) => BarChartGroupData(
-            x: index,
-            barRods: [
-              BarChartRodData(
-                toY: sortedEntries[index].value,
-                width: 18,
-                color: Colors.deepPurple,
-                borderRadius: BorderRadius.circular(4),
+                  return Card(
+                    margin: const EdgeInsets.symmetric(vertical: 8.0),
+                    elevation: 2,
+                    child: ListTile(
+                      leading: Text(
+                        emoji,
+                        style: const TextStyle(fontSize: 32),
+                      ),
+                      title: Text(
+                        nickname,
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: Text('$confidence% 확신'),
+                    ),
+                  );
+                },
               ),
-            ],
-          ),
-        ),
       ),
     );
   }
