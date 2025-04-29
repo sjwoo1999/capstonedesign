@@ -1,8 +1,8 @@
 // lib/screens/root_screen.dart
 import 'package:flutter/material.dart';
 import 'home/home_screen.dart';
-import 'social/social_screen.dart'; // ✅ 새로 추가 예정
-import 'report/report_screen.dart'; // ✅ 새로 추가 예정
+import 'social/social_screen.dart';
+import 'report/report_history_screen.dart'; // ✅ 수정: report_screen → report_history_screen
 import 'settings/settings_screen.dart';
 
 class RootScreen extends StatefulWidget {
@@ -18,7 +18,7 @@ class _RootScreenState extends State<RootScreen> {
   final List<Widget> _screens = const [
     HomeScreen(),
     SocialScreen(),
-    ReportScreen(),
+    ReportHistoryScreen(), // ✅ 수정된 리포트 화면
     SettingsScreen(),
   ];
 

@@ -1,13 +1,14 @@
+// lib/screens/record/record_screen.dart
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
-import '../record/record_screen.dart';
 import '../../providers/emotion_provider.dart';
 import '../../services/emotion_api_services.dart';
 import '../../constants/emotion_constants.dart';
 import '../../models/emotion_result.dart';
+import '../session/session_result_screen.dart'; // ✅ 수정 포인트!
 
 class RecordScreen extends StatefulWidget {
   const RecordScreen({super.key});
@@ -28,7 +29,6 @@ class _RecordScreenState extends State<RecordScreen> {
   void initState() {
     super.initState();
     _apiService = EmotionAPIService();
-    _initializeCamera();
   }
 
   Future<void> _initializeCamera() async {
@@ -116,6 +116,24 @@ class _RecordScreenState extends State<RecordScreen> {
     return base64Encode(jpg);
   }
 
+  void _startSession() async {
+    final provider = context.read<EmotionProvider>();
+    provider.startSession();
+    await _initializeCamera();
+  }
+
+  void _endSession() {
+    final provider = context.read<EmotionProvider>();
+    final result = provider.endSession();
+    _controller?.dispose();
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SessionResultScreen(result: result), // ✅ 수정 포인트
+      ),
+    );
+  }
+
   @override
   void dispose() {
     _controller?.dispose();
@@ -124,16 +142,17 @@ class _RecordScreenState extends State<RecordScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<EmotionProvider>();
-    final result = provider.result;
-    final errorMessage = provider.errorMessage;
+    final isSessionActive = context.watch<EmotionProvider>().isSessionActive;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('실시간 감정 분석'),
-      ),
+      appBar: AppBar(title: const Text('감정 분석')),
       body: !_isCameraInitialized
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(
+              child: ElevatedButton(
+                onPressed: _startSession,
+                child: const Text('분석 시작'),
+              ),
+            )
           : Column(
               children: [
                 Expanded(
@@ -144,32 +163,22 @@ class _RecordScreenState extends State<RecordScreen> {
                   ),
                 ),
                 Expanded(
-                  flex: 4,
-                  child: _buildResultSection(result, errorMessage),
-                ),
+                  flex: 2,
+                  child: Center(
+                    child: ElevatedButton.icon(
+                      onPressed: _endSession,
+                      icon: const Icon(Icons.stop),
+                      label: const Text('분석 종료'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(180, 50),
+                      ),
+                    ),
+                  ),
+                )
               ],
             ),
     );
-  }
-
-  Widget _buildResultSection(EmotionResult? result, String? error) {
-    if (error != null && error.isNotEmpty) {
-      return Center(child: Text(error, style: const TextStyle(color: Colors.red)));
-    } else if (result != null) {
-      final top = result.topEmotion;
-      final emoji = emotionLabelMap[top] ?? top;
-      final nickname = emotionNicknameMap[top] ?? '';
-
-      return Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(nickname, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Text('감정: $emoji', style: const TextStyle(fontSize: 16)),
-        ],
-      );
-    } else {
-      return const Center(child: Text('분석 중...'));
-    }
   }
 }

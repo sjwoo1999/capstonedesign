@@ -1,79 +1,85 @@
+// lib/providers/emotion_provider.dart
 import 'package:flutter/material.dart';
 import '../models/emotion_result.dart';
 
-class EmotionProvider extends ChangeNotifier {
-  /// 🔹 감정 분석 결과 객체
-  EmotionResult? _result;
-  EmotionResult? get result => _result;
+class EmotionProvider with ChangeNotifier {
+  EmotionResult? result;
+  String? errorMessage;
+  bool isAnalyzing = false;
 
-  /// 🔹 감정 분석 실패 메시지
-  String? _errorMessage;
-  String? get errorMessage => _errorMessage;
+  // 🆕 추가
+  List<EmotionResult> sessionResults = [];
+  bool isSessionActive = false;
 
-  /// 🔹 텍스트 분석 중 상태
-  bool _isAnalyzingText = false;
-  bool get isAnalyzingText => _isAnalyzingText;
-
-  /// 🔹 카메라 분석 중 상태 🔥 추가
-  bool _isAnalyzingCamera = false;
-  bool get isAnalyzingCamera => _isAnalyzingCamera;
-
-  void setResult(EmotionResult result) {
-    _result = result;
-    _errorMessage = null;
-    notifyListeners();
-  }
-
-  void setResultFromApi(Map<String, dynamic> json) {
-    _result = EmotionResult.fromApi(json);
-    _errorMessage = null;
-    notifyListeners();
-  }
-
-  void setError(String message) {
-    _result = null;
-    _errorMessage = message;
-    notifyListeners();
-  }
-
-  void clearError() {
-    _errorMessage = null;
-    notifyListeners();
-  }
-
-  void clear() {
-    _result = null;
-    _errorMessage = null;
-    notifyListeners();
-  }
-
-  /// 🧪 텍스트 감정 분석 예시용
-  Future<void> analyze({required String text}) async {
-    _isAnalyzingText = true;
-    notifyListeners();
-
-    try {
-      await Future.delayed(const Duration(seconds: 2));
-      setResult(EmotionResult.fromLocal([
-        0.3, 0.2, 0.1, 0.1, 0.05, 0.15, 0.1,
-      ]));
-    } catch (e) {
-      debugPrint('❌ Text emotion analysis error: $e');
-      setError('텍스트 감정 분석 중 오류가 발생했어요.');
-    } finally {
-      _isAnalyzingText = false;
-      notifyListeners();
-    }
-  }
-
-  /// 🧪 카메라 감정 분석 시도 시작/끝
   void startCameraAnalysis() {
-    _isAnalyzingCamera = true;
+    isAnalyzing = true;
     notifyListeners();
   }
 
   void endCameraAnalysis() {
-    _isAnalyzingCamera = false;
+    isAnalyzing = false;
     notifyListeners();
+  }
+
+  void setResultFromApi(Map<String, dynamic> data) {
+    result = EmotionResult.fromApi(data);
+    if (isSessionActive && result != null) {
+      sessionResults.add(result!);
+    }
+    notifyListeners();
+  }
+
+  void setError(String message) {
+    errorMessage = message;
+    notifyListeners();
+  }
+
+  void clearError() {
+    errorMessage = null;
+    notifyListeners();
+  }
+
+  // 🆕 세션 시작
+  void startSession() {
+    sessionResults.clear();
+    isSessionActive = true;
+    notifyListeners();
+  }
+
+  // 🆕 세션 종료
+  EmotionResult endSession() {
+    isSessionActive = false;
+    if (sessionResults.isEmpty) {
+      // 아무 데이터 없으면 neutral 리턴
+      return EmotionResult(
+        probabilities: {
+          'happy': 0,
+          'sad': 0,
+          'angry': 0,
+          'surprised': 0,
+          'disgust': 0,
+          'fear': 0,
+          'neutral': 1,
+        },
+        feedback: '',
+      );
+    }
+    // 평균 계산
+    final Map<String, double> sum = {
+      'happy': 0,
+      'sad': 0,
+      'angry': 0,
+      'surprised': 0,
+      'disgust': 0,
+      'fear': 0,
+      'neutral': 0,
+    };
+    for (var r in sessionResults) {
+      r.probabilities.forEach((key, value) {
+        sum[key] = (sum[key] ?? 0) + value;
+      });
+    }
+    final avg = sum.map((key, value) => MapEntry(key, value / sessionResults.length));
+    return EmotionResult(probabilities: avg, feedback: '');
   }
 }
