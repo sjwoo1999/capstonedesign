@@ -12,7 +12,6 @@ class ReportScreen extends StatelessWidget {
     final historyList = context.watch<EmotionProvider>().historyList.reversed.toList();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('과거 기록')),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: historyList.isEmpty

@@ -16,10 +16,6 @@ class SessionResultScreen extends StatelessWidget {
     final nickname = emotionNicknameMap[topEmotion] ?? topEmotion;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('분석 결과'),
-        centerTitle: true,
-      ),
       body: Padding(
         padding: const EdgeInsets.all(24.0),
         child: Column(

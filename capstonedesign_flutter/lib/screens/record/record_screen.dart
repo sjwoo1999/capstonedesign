@@ -143,7 +143,6 @@ class _RecordScreenState extends State<RecordScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('감정 분석')),
       body: !_isCameraInitialized
           ? const Center(child: CircularProgressIndicator()) // ✅ 로딩 상태 보여주기
           : Column(

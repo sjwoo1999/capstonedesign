@@ -49,6 +49,7 @@ class _RootScreenState extends State<RootScreen> {
         title: Text(_titles[_selectedIndex]),
         centerTitle: true,
         backgroundColor: Colors.deepPurple,
+        foregroundColor: Colors.white,
         actions: _actions[_selectedIndex],
       ),
       body: IndexedStack(
