@@ -3,27 +3,30 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 
 import 'providers/emotion_provider.dart';
-import 'screens/root_screen.dart'; // ✅ 추가
+import 'screens/root_screen.dart';
 import 'services/emotion_api_services.dart';
 import 'services/server_discovery_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env");
+
+  String? serverUrl;
 
   try {
-    await dotenv.load(fileName: ".env");
-    print("✅ .env loaded: ${dotenv.env['EMOTION_API_URL']}");
-  } catch (e) {
-    print("❌ .env 로드 실패: $e");
-  }
-
-  try {
-    final serverUrl = await ServerDiscoveryService.findServer();
-    EmotionAPIService.setBaseUrl(serverUrl ?? dotenv.env['EMOTION_API_URL'] ?? 'http://127.0.0.1:5001');
+    serverUrl = await ServerDiscoveryService.findServer();
+    if (serverUrl != null) {
+      print('✅ 서버 탐색 성공: $serverUrl');
+    } else {
+      print('🛟 서버 탐색 실패, fallback 사용');
+    }
   } catch (e) {
     print('⚠️ 서버 탐색 중 예외 발생: $e');
-    EmotionAPIService.setBaseUrl(dotenv.env['EMOTION_API_URL'] ?? 'http://127.0.0.1:5001');
   }
+
+  EmotionAPIService.setBaseUrl(
+    serverUrl ?? dotenv.env['EMOTION_API_URL'] ?? 'http://127.0.0.1:5001',
+  );
 
   runApp(
     MultiProvider(
@@ -51,12 +54,12 @@ class MyApp extends StatelessWidget {
             ),
         fontFamily: 'NotoSansKR',
         appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.white,
-          foregroundColor: Colors.black87,
+          backgroundColor: Colors.deepPurple,
+          foregroundColor: Colors.white,
           elevation: 1,
         ),
       ),
-      home: const RootScreen(), // ✅ 수정 완료
+      home: const RootScreen(),
     );
   }
 }
