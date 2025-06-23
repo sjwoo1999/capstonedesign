@@ -11,6 +11,9 @@ import '../analysis/analysis_pending_screen.dart';
 import 'package:timer_builder/timer_builder.dart';
 import 'dart:convert';
 import '../../models/emotion_data_point.dart';
+import 'package:image/image.dart' as img;
+import '../../services/emotion_api_services.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 
 
 // 대화 상태를 명확하게 정의
@@ -38,7 +41,13 @@ class _SessionScreenState extends State<SessionScreen> {
   CameraController? _cameraController;
   bool _isCameraInitialized = false;
   bool _hasCameraPermission = false;
+  bool _hasMicPermission = false;
   String _cameraError = '';
+
+  // 오디오 관련
+  stt.SpeechToText? _speechToText;
+  bool _isListening = false;
+  String _lastWords = '';
 
   // 대화 관련
   DateTime? _conversationStartTime;
@@ -51,7 +60,7 @@ class _SessionScreenState extends State<SessionScreen> {
   void initState() {
     super.initState();
     print('🚀 실시간 대화 화면 초기화 시작');
-    _checkCameraPermission();
+    _checkPermissions();
     
     // 주제 컨트롤러 리스너 추가
     _topicController.addListener(() {
@@ -66,7 +75,18 @@ class _SessionScreenState extends State<SessionScreen> {
     _topicController.dispose();
     _noteController.dispose();
     _cameraController?.dispose();
+    _stopVoiceAnalysis();
     super.dispose();
+  }
+
+  Future<void> _checkPermissions() async {
+    await _checkCameraPermission();
+    await _checkMicPermission();
+
+    // 시뮬레이터에서는 권한이 없어도 카메라 초기화를 시도
+    if (_hasCameraPermission || _isSimulator()) {
+      _initializeCamera();
+    }
   }
 
   Future<void> _checkCameraPermission() async {
@@ -80,10 +100,10 @@ class _SessionScreenState extends State<SessionScreen> {
         setState(() {
           _hasCameraPermission = true;
         });
-        _initializeCamera();
       } else if (status.isDenied) {
         print('❌ 카메라 권한 거부됨, 요청 시작');
-        _requestCameraPermission();
+        await Permission.camera.request();
+        setState(() {}); // Re-check permissions after request
       } else if (status.isPermanentlyDenied) {
         print('🚫 카메라 권한 영구 거부됨');
         setState(() {
@@ -95,32 +115,29 @@ class _SessionScreenState extends State<SessionScreen> {
     }
   }
 
-  Future<void> _requestCameraPermission() async {
+  Future<void> _checkMicPermission() async {
     try {
-      print('🔐 카메라 권한 요청 시작');
-      final result = await Permission.camera.request();
-      print('📱 권한 요청 결과: $result');
-      
-      setState(() {
-        _hasCameraPermission = result.isGranted;
-      });
-      
-      if (result.isGranted) {
-        print('✅ 권한 허용됨, 카메라 초기화 시작');
-        _initializeCamera();
-      } else if (result.isPermanentlyDenied) {
-        print('🚫 영구 거부됨, 설정으로 이동');
-        _showPermissionDialog();
-      } else {
-        print('❌ 권한 거부됨 (일시적)');
-        _showPermissionDeniedDialog();
+      print('🔍 마이크 권한 상태 확인');
+      final status = await Permission.microphone.status;
+      print('🎤 현재 마이크 권한 상태: $status');
+
+      if (status.isGranted) {
+        print('✅ 마이크 권한 이미 허용됨');
+        setState(() {
+          _hasMicPermission = true;
+        });
+      } else if (status.isDenied) {
+        print('❌ 마이크 권한 거부됨, 요청 시작');
+        await Permission.microphone.request();
+        setState(() {}); // Re-check permissions after request
+      } else if (status.isPermanentlyDenied) {
+        print('🚫 마이크 권한 영구 거부됨');
+        setState(() {
+          _hasMicPermission = false;
+        });
       }
     } catch (e) {
-      print('❌ 권한 요청 중 오류: $e');
-      setState(() {
-        _hasCameraPermission = false;
-        _cameraError = '권한 요청 실패: $e';
-      });
+      print('❌ 마이크 권한 확인 중 오류: $e');
     }
   }
 
@@ -128,9 +145,10 @@ class _SessionScreenState extends State<SessionScreen> {
     print('🔄 권한 요청 재시도');
     setState(() {
       _hasCameraPermission = false;
+      _hasMicPermission = false;
       _cameraError = '';
     });
-    _requestCameraPermission();
+    _checkPermissions();
   }
 
   void _showPermissionDialog() {
@@ -180,7 +198,7 @@ class _SessionScreenState extends State<SessionScreen> {
           TextButton(
             onPressed: () {
               Navigator.of(context).pop();
-              _requestCameraPermission();
+              _checkPermissions();
             },
             child: const Text('다시 시도'),
           ),
@@ -216,6 +234,8 @@ class _SessionScreenState extends State<SessionScreen> {
         print('❌ 전면 카메라를 찾을 수 없습니다.');
         setState(() {
           _cameraError = '전면 카메라를 찾을 수 없습니다.';
+          _isCameraInitialized = true;
+          _conversationState = ConversationState.ready;
         });
         return;
       }
@@ -283,13 +303,14 @@ class _SessionScreenState extends State<SessionScreen> {
     _startRealTimeAnalysis();
   }
 
-  void _endConversation() {
+  void _endConversation() async {
     setState(() {
       _conversationState = ConversationState.ending;
       _conversationEndTime = DateTime.now();
     });
     
     _cameraController?.stopImageStream();
+    await _stopVoiceAnalysis();
     print('🔚 대화 종료, 분석 데이터 (${_sessionData.length}개) 전송 준비');
     
     // 실제 앱에서는 여기서 서버로 _sessionData 를 json으로 변환하여 전송합니다.
@@ -304,23 +325,152 @@ class _SessionScreenState extends State<SessionScreen> {
 
   void _startRealTimeAnalysis() {
     if (_cameraController == null) return;
+    _startImageAnalysis();
+    _startVoiceAnalysis();
+  }
 
+  void _startImageAnalysis() {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
     // 이미지 스트림 시작
-    _cameraController!.startImageStream((CameraImage image) {
+    _cameraController!.startImageStream((CameraImage cameraImage) async {
+      // 3초에 한 번씩만 이미지를 처리하도록 제어
       final now = DateTime.now();
       if (now.difference(_lastAnalyzedTime) < const Duration(seconds: 3)) {
         return;
       }
       _lastAnalyzedTime = now;
 
-      // 실제 분석이라면 여기서 image 객체를 API로 보냅니다.
-      // 지금은 VAD 분석 결과를 받았다고 시뮬레이션합니다.
-      final newDataPoint = EmotionDataPoint.mock();
-      _sessionData.add(newDataPoint);
+      try {
+        // 1. CameraImage를 일반 이미지(JPEG)로 변환
+        final image = _convertCameraImage(cameraImage);
+        if (image == null) return;
 
-      // 구조화된 로그 출력
-      print('📊 VAD 데이터 수신: ${jsonEncode(newDataPoint.toJson())}');
+        // 2. 이미지를 Base64 문자열로 인코딩
+        final base64Image = base64Encode(img.encodeJpg(image));
+
+        // 3. API 서비스로 전송하여 분석 요청
+        final apiService = EmotionAPIService();
+        print('🚀 API 요청 전송 시작...');
+        final result = await apiService.sendImageForAnalysis(base64Image);
+        print('✅ API 응답 수신: $result');
+
+        // 4. 응답 결과를 EmotionDataPoint 모델로 변환
+        final newDataPoint = EmotionDataPoint(
+          timestamp: DateTime.now(),
+          valence: result['vad']['valence']?.toDouble() ?? 0.0,
+          arousal: result['vad']['arousal']?.toDouble() ?? 0.0,
+          dominance: result['vad']['dominance']?.toDouble() ?? 0.0,
+        );
+        
+        _sessionData.add(newDataPoint);
+        print('📊 VAD 데이터 수신: ${jsonEncode(newDataPoint.toJson())}');
+
+      } catch (e) {
+        print('❌ 실시간 분석 API 호출 실패: $e');
+      }
     });
+  }
+
+  Future<void> _startVoiceAnalysis() async {
+    if (!_hasMicPermission && !_isSimulator()) {
+      print('🎤 마이크 권한이 없어 음성 분석을 시작할 수 없습니다.');
+      return;
+    }
+    try {
+      print('🎤 음성 인식 시작...');
+      _speechToText = stt.SpeechToText();
+      final available = await _speechToText!.initialize();
+      if (available) {
+        _isListening = true;
+        await _speechToText!.listen(
+          onResult: (result) {
+            print('🎧 음성 인식 결과: ${result.recognizedWords}');
+            setState(() {
+              _lastWords = result.recognizedWords;
+            });
+          },
+          listenFor: const Duration(seconds: 30),
+          pauseFor: const Duration(seconds: 3),
+          partialResults: true,
+          localeId: 'ko_KR',
+        );
+      } else {
+        print('❌ 음성 인식을 사용할 수 없습니다.');
+        if (_isSimulator()) {
+          print('📱 시뮬레이터에서는 음성 인식이 제한될 수 있습니다.');
+        }
+      }
+    } catch (e) {
+      print('❌ 음성 인식 시작 실패: $e');
+      if (_isSimulator()) {
+        print('📱 시뮬레이터에서는 음성 인식이 제한될 수 있습니다.');
+      }
+    }
+  }
+
+  Future<void> _stopVoiceAnalysis() async {
+    try {
+      if (_speechToText != null && _isListening) {
+        await _speechToText!.stop();
+        _isListening = false;
+        print('🔇 음성 인식 중지');
+      }
+    } catch (e) {
+      print('❌ 음성 인식 중지 실패: $e');
+    }
+  }
+
+  // CameraImage (YUV420_888 format) to Image (RGB format)
+  img.Image? _convertCameraImage(CameraImage image) {
+    if (image.format.group == ImageFormatGroup.yuv420) {
+      // YUV420 -> RGB 변환 로직 (기존 코드 유지)
+      final int width = image.width;
+      final int height = image.height;
+      final int uvRowStride = image.planes[1].bytesPerRow;
+      final int? uvPixelStride = image.planes[1].bytesPerPixel;
+
+      final yPlane = image.planes[0].bytes;
+      final uPlane = image.planes[1].bytes;
+      final vPlane = image.planes[2].bytes;
+
+      final outImg = img.Image(width: width, height: height);
+
+      for (int y = 0; y < height; y++) {
+        for (int x = 0; x < width; x++) {
+          final int yIndex = y * width + x;
+          final int uvIndex = (y / 2).floor() * uvRowStride + (x / 2).floor() * (uvPixelStride ?? 0);
+          
+          final int yValue = yPlane[yIndex];
+          final int uValue = uPlane[uvIndex];
+          final int vValue = vPlane[uvIndex];
+
+          // ITU-R BT.601 conversion
+          int r = (yValue + 1.402 * (vValue - 128)).round();
+          int g = (yValue - 0.344136 * (uValue - 128) - 0.714136 * (vValue - 128)).round();
+          int b = (yValue + 1.772 * (uValue - 128)).round();
+          
+          r = r.clamp(0, 255);
+          g = g.clamp(0, 255);
+          b = b.clamp(0, 255);
+
+          outImg.setPixelRgba(x, y, r, g, b, 255);
+        }
+      }
+      return img.copyRotate(outImg, angle: 90);
+
+    } else if (image.format.group == ImageFormatGroup.bgra8888) {
+      // BGRA8888 -> RGB 변환 로직 (iOS용)
+      final plane = image.planes[0];
+      return img.Image.fromBytes(
+        width: image.width,
+        height: image.height,
+        bytes: plane.bytes.buffer,
+        order: img.ChannelOrder.bgra,
+      );
+    } else {
+      print('지원하지 않는 이미지 포맷: ${image.format.group}');
+      return null;
+    }
   }
 
   void _addNote() {
@@ -662,7 +812,7 @@ class _SessionScreenState extends State<SessionScreen> {
   }
 
   Widget _buildCameraPreview() {
-    if (!_hasCameraPermission) {
+    if (!_hasCameraPermission && !_isSimulator()) {
       return _buildPermissionRequiredUI();
     }
     if (_cameraError.isNotEmpty) {
@@ -689,6 +839,32 @@ class _SessionScreenState extends State<SessionScreen> {
     }
     if (!_isCameraInitialized || _cameraController == null || !_cameraController!.value.isInitialized) {
       return const Center(child: CircularProgressIndicator());
+    }
+
+    // 시뮬레이터에서 카메라가 없을 때 플레이스홀더 표시
+    if (_isSimulator() && _cameraController == null) {
+      return Container(
+        color: Colors.black,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.camera_alt, size: 80, color: Colors.white54),
+              const SizedBox(height: 16),
+              const Text(
+                '시뮬레이터 모드',
+                style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '실제 디바이스에서 카메라 기능을 확인하세요',
+                style: TextStyle(color: Colors.white70, fontSize: 16),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
     }
 
     // 화면 크기와 카메라 프리뷰의 비율을 계산하여 화면을 꽉 채우는 스케일 값을 구합니다.
@@ -738,6 +914,11 @@ class _SessionScreenState extends State<SessionScreen> {
         ),
       ),
     );
+  }
+
+  bool _isSimulator() {
+    // 시뮬레이터 환경 감지
+    return !_hasCameraPermission && !_hasMicPermission;
   }
 }
 

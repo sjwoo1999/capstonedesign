@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
@@ -25,6 +26,22 @@ class EmotionAPIService {
   }
 
   Future<Map<String, dynamic>> sendImageForAnalysis(String base64Image) async {
+    // [개발용 목업] - 실제 서버가 불안정할 때 사용합니다.
+    // true로 바꾸면 실제 서버 요청 대신 아래의 가짜 데이터를 즉시 반환합니다.
+    const bool useMockData = true; 
+    if (useMockData) {
+      print('🚧 DEVELOPMENT MODE: Mock API Response 사용 중 🚧');
+      await Future.delayed(const Duration(milliseconds: 800)); // 실제 네트워크처럼 보이게 살짝 지연
+      return {
+        "status": "success",
+        "vad": {
+          "valence": (Random().nextDouble() * 2 - 1),
+          "arousal": (Random().nextDouble() * 2 - 1),
+          "dominance": (Random().nextDouble() * 2 - 1)
+        }
+      };
+    }
+
     int retryAttempts = 0;
 
     while (retryAttempts < maxRetryCount) {
@@ -33,7 +50,7 @@ class EmotionAPIService {
           Uri.parse('$_baseUrl/predict'),
           headers: {"Content-Type": "application/json"},
           body: jsonEncode({"image": base64Image}),
-        );
+        ).timeout(const Duration(seconds: 5));
 
         if (response.statusCode == 200) {
           return jsonDecode(response.body);

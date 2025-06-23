@@ -32,7 +32,7 @@ dependencies:
   flutter_svg: ^2.0.10+1
   audioplayers: ^5.2.1
   # VAD 감정 분석을 위한 의존성
-  google_ml_kit: ^0.17.0
+  # google_ml_kit: ^0.17.0
   # CBT 피드백을 위한 의존성
   flutter_markdown: ^0.6.18
   timer_builder: ^2.0.0

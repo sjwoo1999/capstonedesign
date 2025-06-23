@@ -33,6 +33,10 @@
     <key>NSMicrophoneUsageDescription</key>
     <string>BeMore 앱은 음성 분석을 통해 감정 상태를 파악하기 위해 마이크 접근이 필요합니다. 이 정보는 개인화된 CBT 피드백을 제공하는 데 사용됩니다.</string>
     
+    <!-- 음성 인식 사용 목적 -->
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>BeMore 앱은 대화 내용을 분석하여 감정 상태를 파악하기 위해 음성 인식 기능을 사용합니다. 이 정보는 개인화된 CBT 피드백을 제공하는 데 사용됩니다.</string>
+    
     <key>UILaunchStoryboardName</key>
     <string>LaunchScreen</string>
     <key>UIMainStoryboardFile</key>
