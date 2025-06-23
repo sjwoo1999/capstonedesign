@@ -35,6 +35,7 @@ dependencies:
   google_ml_kit: ^0.17.0
   # CBT 피드백을 위한 의존성
   flutter_markdown: ^0.6.18
+  timer_builder: ^2.0.0
 
 dev_dependencies:
   flutter_test:

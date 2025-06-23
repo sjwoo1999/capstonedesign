@@ -9,7 +9,7 @@
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIdentifier</key>
-    <string>com.example.capstonedesignFlutter</string>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
@@ -27,11 +27,11 @@
 
     <!-- 카메라 사용 목적 -->
     <key>NSCameraUsageDescription</key>
-    <string>We need access to your camera to capture images for emotion analysis.</string>
+    <string>BeMore 앱은 표정 분석을 통한 감정 인식을 위해 카메라 접근 권한이 필요합니다.</string>
 
-    <!-- 마이크 사용 목적 (필수!) -->
+    <!-- 마이크 사용 목적 -->
     <key>NSMicrophoneUsageDescription</key>
-    <string>We need access to your microphone for potential voice interaction features.</string>
+    <string>BeMore 앱은 음성 분석을 통해 감정 상태를 파악하기 위해 마이크 접근이 필요합니다. 이 정보는 개인화된 CBT 피드백을 제공하는 데 사용됩니다.</string>
     
     <key>UILaunchStoryboardName</key>
     <string>LaunchScreen</string>
