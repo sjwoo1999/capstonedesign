@@ -6,6 +6,7 @@ class EmotionProvider with ChangeNotifier {
   EmotionResult? result;
   String? errorMessage;
   bool isAnalyzing = false;
+  bool _onboardingCompleted = false;
 
   // 🆕 세션 중 수집된 결과들
   List<EmotionResult> sessionResults = [];
@@ -15,6 +16,14 @@ class EmotionProvider with ChangeNotifier {
 
   // 🆕 전체 앱 실행 중 누적 기록 (메모리 기반)
   List<EmotionResult> historyList = [];
+
+  // 온보딩 완료 상태
+  bool get onboardingCompleted => _onboardingCompleted;
+
+  void setOnboardingCompleted(bool completed) {
+    _onboardingCompleted = completed;
+    notifyListeners();
+  }
 
   void startCameraAnalysis() {
     isAnalyzing = true;

@@ -1,5 +1,5 @@
-name: capstonedesign_flutter
-description: "A Flutter app for CapstoneDesign to analyze emotions and provide daily reflection feedback."
+name: bemore_app
+description: "BeMore: 내 감정을 인식하고 회고하는 정서 VAD 기반 멀티모달 감정 분석과 CBT 회고 리포트 시스템"
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -14,12 +14,27 @@ dependencies:
   camera: ^0.10.5+2
   tflite_flutter: ^0.11.0
   image_picker: ^1.1.2
-  provider: ^6.1.2  # 상태 관리 추가
+  provider: ^6.1.2
   image: ^4.2.0
   fl_chart: ^0.63.0
   flutter_dotenv: ^5.2.1
   google_fonts: ^6.2.1
   flutter_launcher_icons: ^0.14.3
+  # BeMore 앱을 위한 추가 의존성
+  speech_to_text: ^6.6.0
+  permission_handler: ^11.3.1
+  path_provider: ^2.1.4
+  pdf: ^3.10.7
+  printing: ^5.11.1
+  shared_preferences: ^2.2.3
+  intl: ^0.19.0
+  lottie: ^3.1.2
+  flutter_svg: ^2.0.10+1
+  audioplayers: ^5.2.1
+  # VAD 감정 분석을 위한 의존성
+  google_ml_kit: ^0.17.0
+  # CBT 피드백을 위한 의존성
+  flutter_markdown: ^0.6.18
 
 dev_dependencies:
   flutter_test:
@@ -31,11 +46,15 @@ flutter:
   assets:
     - assets/mobilenet_v2_1.0_224.tflite
     - assets/model.tflite
+    - assets/vad_model/
+    - assets/cbt_templates/
+    - assets/animations/
+    - assets/icons/
     - .env
 
 flutter_icons:
   android: true
   ios: true
-  image_path: "assets/icon/logo_1024.png"
-  adaptive_icon_background: "#FFFFFF"
-  adaptive_icon_foreground: "assets/icon/logo_1024.png"
+  image_path: "assets/icons/bemore_logo_1024.png"
+  adaptive_icon_background: "#6366F1"
+  adaptive_icon_foreground: "assets/icons/bemore_logo_1024.png"

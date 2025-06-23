@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'providers/emotion_provider.dart';
-import 'screens/root_screen.dart';
+import 'providers/vad_provider.dart';
+import 'providers/cbt_provider.dart';
+import 'screens/onboarding/onboarding_screen.dart';
 import 'services/emotion_api_services.dart';
 import 'services/server_discovery_service.dart';
+import 'theme/bemore_theme.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,7 +20,7 @@ Future<void> main() async {
   try {
     serverUrl = await ServerDiscoveryService.findServer();
     if (serverUrl != null) {
-      print('✅ 서버 탐색 성공: $serverUrl');
+      print('✅ BeMore 서버 탐색 성공: $serverUrl');
     } else {
       print('🛟 서버 탐색 실패, fallback 사용');
     }
@@ -32,34 +36,24 @@ Future<void> main() async {
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => EmotionProvider()),
+        ChangeNotifierProvider(create: (_) => VADProvider()),
+        ChangeNotifierProvider(create: (_) => CBTProvider()),
       ],
-      child: const MyApp(),
+      child: const BeMoreApp(),
     ),
   );
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class BeMoreApp extends StatelessWidget {
+  const BeMoreApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: '마음온도',
-      theme: ThemeData(
-        primarySwatch: Colors.deepPurple,
-        scaffoldBackgroundColor: const Color(0xFFF6F7F9),
-        textTheme: Theme.of(context).textTheme.apply(
-              fontFamily: 'NotoSansKR',
-            ),
-        fontFamily: 'NotoSansKR',
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Colors.deepPurple,
-          foregroundColor: Colors.white,
-          elevation: 1,
-        ),
-      ),
-      home: const RootScreen(),
+      title: 'BeMore',
+      theme: BeMoreTheme.lightTheme,
+      home: const OnboardingScreen(),
     );
   }
 }
