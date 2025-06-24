@@ -1,14 +1,16 @@
+import os
+import csv
 from flask import Flask, request, jsonify
 import numpy as np
 import cv2
-import base64
 from keras.models import load_model
 import dlib
-import socket  # ✅ 추가 (IP 조회용)
+import base64
+import socket
 
 app = Flask(__name__)
 
-# 모델 로드
+# 얼굴 감정 분석 모델 및 dlib detector 로드
 emotion_model = load_model("models/emotion_model.h5", compile=False)
 face_detector = dlib.get_frontal_face_detector()
 expression_labels = ['Angry', 'Disgust', 'Fear', 'Happy', 'Sad', 'Surprise', 'Neutral']
@@ -30,7 +32,6 @@ def preprocess_face(image):
 @app.route('/predict', methods=['POST'])
 def predict():
     data = request.get_json()
-
     try:
         img_data = data["image"]
         img_bytes = base64.b64decode(img_data)
@@ -48,21 +49,50 @@ def predict():
         emotion_idx = int(np.argmax(preds))
         emotion_label = expression_labels[emotion_idx]
         confidence = float(preds[emotion_idx])
-        
         probabilities = {
             expression_labels[i]: float(preds[i]) for i in range(len(preds))
         }
-
         return jsonify({
             'emotion': emotion_label,
             'confidence': confidence,
             'probabilities': probabilities
         })
-
     except Exception as e:
         return jsonify({'error': f'Model inference failed: {str(e)}'}), 500
 
-# ✅ 서버 IP를 알려주는 엔드포인트 추가
+# NRC Lexicon 기반 한글 감정 분석
+LEXICON_PATH = os.path.join(os.path.dirname(__file__), 'lexicon', 'Korean-NRC-EmoLex.txt')
+korean_lexicon = {}
+lexicon_emotions = []
+with open(LEXICON_PATH, encoding='utf-8') as f:
+    reader = csv.DictReader(f, delimiter='\t')
+    lexicon_emotions = [col for col in reader.fieldnames if col not in ('English Word', 'Korean Word')]
+    for row in reader:
+        word = row['Korean Word'].strip()
+        if word:
+            korean_lexicon[word] = {emotion: int(row[emotion]) for emotion in lexicon_emotions}
+
+def analyze_korean_text_emotion(text):
+    words = text.strip().split()
+    scores = {emotion: 0 for emotion in lexicon_emotions}
+    count = {emotion: 0 for emotion in lexicon_emotions}
+    for word in words:
+        if word in korean_lexicon:
+            for emotion in lexicon_emotions:
+                scores[emotion] += korean_lexicon[word][emotion]
+                count[emotion] += 1
+    avg_scores = {emotion: (scores[emotion] / count[emotion]) if count[emotion] > 0 else 0 for emotion in lexicon_emotions}
+    return avg_scores
+
+@app.route('/analyze_text_emotion', methods=['POST'])
+def analyze_text_emotion():
+    data = request.get_json()
+    text = data.get('text', '').strip()
+    if not text:
+        return jsonify({'error': 'No text provided'}), 400
+    result = analyze_korean_text_emotion(text)
+    return jsonify({'result': result})
+
 @app.route('/whoami', methods=['GET'])
 def whoami():
     ip_address = socket.gethostbyname(socket.gethostname())
@@ -78,4 +108,4 @@ def health_check():
 
 if __name__ == '__main__':
     print("🚀 Flask API 서버 실행 중... (http://0.0.0.0:5001)")
-    app.run(host='0.0.0.0', port=5001)
+    app.run(host='0.0.0.0', port=5001) 
