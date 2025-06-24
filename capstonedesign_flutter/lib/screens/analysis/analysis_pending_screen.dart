@@ -1,8 +1,68 @@
 import 'package:flutter/material.dart';
+import '../../services/mock_analysis_service.dart';
+import '../../models/emotion_data_point.dart';
 import '../home/home_screen.dart';
+import 'analysis_result_screen.dart';
 
-class AnalysisPendingScreen extends StatelessWidget {
-  const AnalysisPendingScreen({super.key});
+class AnalysisPendingScreen extends StatefulWidget {
+  final List<EmotionDataPoint> sessionData;
+  
+  const AnalysisPendingScreen({
+    super.key,
+    required this.sessionData,
+  });
+
+  @override
+  State<AnalysisPendingScreen> createState() => _AnalysisPendingScreenState();
+}
+
+class _AnalysisPendingScreenState extends State<AnalysisPendingScreen> {
+  bool _isAnalyzing = true;
+  String _statusMessage = '분석을 시작합니다...';
+
+  @override
+  void initState() {
+    super.initState();
+    _performAnalysis();
+  }
+
+  void _performAnalysis() async {
+    // 즉시 분석 수행
+    setState(() {
+      _statusMessage = 'VAD 데이터 분석 중...';
+    });
+    
+    await Future.delayed(const Duration(milliseconds: 500));
+    
+    setState(() {
+      _statusMessage = '감정 패턴 분석 중...';
+    });
+    
+    await Future.delayed(const Duration(milliseconds: 500));
+    
+    setState(() {
+      _statusMessage = 'CBT 피드백 생성 중...';
+    });
+    
+    await Future.delayed(const Duration(milliseconds: 500));
+    
+    setState(() {
+      _statusMessage = '분석 완료!';
+    });
+    
+    await Future.delayed(const Duration(milliseconds: 300));
+    
+    // 분석 결과 화면으로 이동
+    if (mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (context) => AnalysisResultScreen(
+            sessionData: widget.sessionData,
+          ),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -34,7 +94,7 @@ class AnalysisPendingScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  '대화 내용에 대한 심층 분석이 진행 중입니다.\n분석이 완료되면 푸시 알림으로 알려드릴게요.\n\n앱을 종료하셔도 괜찮습니다.',
+                  _statusMessage,
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.white.withOpacity(0.7),

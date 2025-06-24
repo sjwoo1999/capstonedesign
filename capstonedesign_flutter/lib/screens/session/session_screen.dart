@@ -318,7 +318,7 @@ class _SessionScreenState extends State<SessionScreen> {
     print('📦 전송될 최종 데이터: $payload');
     
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (context) => const AnalysisPendingScreen()),
+      MaterialPageRoute(builder: (context) => AnalysisPendingScreen(sessionData: _sessionData)),
       (route) => false, // 현재까지의 모든 라우트를 스택에서 제거
     );
   }
