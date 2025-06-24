@@ -238,7 +238,7 @@ class _AnalysisResultScreenState extends State<AnalysisResultScreen> {
           ),
           child: FractionallySizedBox(
             alignment: Alignment.centerLeft,
-            widthFactor: value,
+            widthFactor: ((value + 1) / 2).clamp(0.0, 1.0),
             child: Container(
               decoration: BoxDecoration(
                 color: color,
