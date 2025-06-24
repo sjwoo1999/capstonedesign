@@ -56,7 +56,7 @@ class MockAnalysisService {
     return {
       'analysis': {
         'timestamp': DateTime.now().toIso8601String(),
-        'sessionDuration': _calculateSessionDuration(sessionData),
+        'sessionDuration': _calculateSessionDuration(sessionData).inSeconds,
         'dataPoints': sessionData.length,
         'emotionCategory': emotionCategory,
         'emotionIcon': _emotionIcons[emotionCategory]?.codePoint ?? 0xe3c9,
@@ -398,7 +398,7 @@ class MockAnalysisService {
     return {
       'analysis': {
         'timestamp': DateTime.now().toIso8601String(),
-        'sessionDuration': Duration.zero,
+        'sessionDuration': Duration.zero.inSeconds,
         'dataPoints': 0,
         'emotionCategory': 'neutral',
         'emotionIcon': 0xe3c9,
