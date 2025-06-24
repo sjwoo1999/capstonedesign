@@ -13,6 +13,7 @@ class BeMoreTheme {
   static const Color errorColor = Color(0xFFEF4444);        // 빨간색
   static const Color successColor = Color(0xFF10B981);      // 초록색
   static const Color warningColor = Color(0xFFF59E0B);      // 주황색
+  static const Color borderColor = Color(0xFFE5E7EB); // 연한 회색(테두리)
 
   // VAD 감정별 컬러
   static const Map<String, Color> emotionColors = {
