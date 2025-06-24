@@ -29,7 +29,7 @@ Future<void> main() async {
   }
 
   EmotionAPIService.setBaseUrl(
-    serverUrl ?? dotenv.env['EMOTION_API_URL'] ?? 'http://127.0.0.1:5001',
+    serverUrl ?? dotenv.env['SERVER_URL'] ?? 'http://127.0.0.1:5001',
   );
 
   runApp(

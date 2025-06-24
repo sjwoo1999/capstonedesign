@@ -75,6 +75,16 @@ def health_check():
             'error': str(e)
         }), 500
 
+@app.route('/whoami', methods=['GET'])
+def whoami():
+    """서버 탐색용 엔드포인트"""
+    return jsonify({
+        'server': 'multimodal_emotion_api',
+        'version': '1.0.0',
+        'status': 'running',
+        'timestamp': datetime.now().isoformat()
+    })
+
 @app.route('/analyze_multimodal_emotion', methods=['POST'])
 def analyze_multimodal_emotion():
     """멀티모달 감정 분석 메인 API"""

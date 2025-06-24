@@ -357,9 +357,9 @@ class _SessionScreenState extends State<SessionScreen> {
         // 4. 응답 결과를 EmotionDataPoint 모델로 변환
         final newDataPoint = EmotionDataPoint(
           timestamp: DateTime.now(),
-          valence: result['vad']['valence']?.toDouble() ?? 0.0,
-          arousal: result['vad']['arousal']?.toDouble() ?? 0.0,
-          dominance: result['vad']['dominance']?.toDouble() ?? 0.0,
+          valence: result['final_vad']['valence']?.toDouble() ?? 0.0,
+          arousal: result['final_vad']['arousal']?.toDouble() ?? 0.0,
+          dominance: result['final_vad']['dominance']?.toDouble() ?? 0.0,
         );
         
         _sessionData.add(newDataPoint);
