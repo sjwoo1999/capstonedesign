@@ -1,130 +1,70 @@
-# 💡 마음온도 (MindThermo) - 감정 인식 기반 정서 케어 서비스
+# BeMore: Multimodal Emotion Analysis & CBT Report
 
-![App Screenshot](screenshots/mindthermo_ui.png)
-
----
-
-## 📖 프로젝트 개요
-
-`마음온도`는 실시간 표정 분석을 통해 사용자의 감정을 섬세하게 시각화하고, 자가 정서 관리와 상담 연계를 지원하는 **정서 인식 기반 감정 케어 서비스**입니다.  
-전면 카메라를 활용해 표정 기반 감정 데이터를 수집하고, 직관적 UX를 통해 사용자에게 따뜻한 피드백을 제공합니다.
+## Overview
+BeMore is an AI-powered partner for emotion recognition and self-reflection. It provides VAD-based multimodal emotion analysis and CBT (Cognitive Behavioral Therapy) feedback reports, helping users understand and reflect on their emotions.
 
 ---
 
-## 🧠 주요 기능
-
-| 기능 | 설명 |
-|------|------|
-| 실시간 표정 기반 감정 인식 | 전면 카메라를 통해 1초 간격으로 표정 분석 |
-| 감정 확률 막대 그래프 | 감정 분포를 직관적 그래프로 시각화 |
-| 이모지+닉네임 기반 UX 문구 | 감정 상태를 친근한 문장으로 전달 |
-| 영상 저장 금지 안내 | 프라이버시 보호 문구 표시 |
-| 감정 히스토리 화면 | (준비 중) 과거 감정 기록 관리 기능 |
+## Social Background
+Modern people, especially the MZ generation, often struggle to express emotions and face psychological barriers to mental health care. Most existing emotion analysis services are text-based or limited to six basic categories, lacking integrated interpretation of facial, vocal, and complex signals.
 
 ---
 
-## 🏗️ 시스템 아키텍처 (CoT 흐름)
-
-### 1. 입력 단계
-- Flutter `camera` 패키지로 전면 카메라 스트리밍
-- 프레임은 1초 간격으로 선별
-
-### 2. 전처리 단계
-- 이미지 포맷(YUV420/BGRA8888) 감지
-- Grayscale 변환 → 중앙 70% Crop → 224x224 리사이즈
-- JPEG 인코딩 → Base64로 변환 후 전송
-
-### 3. 서버 측 분석 (Flask)
-- `emotion_model.h5` 모델로 표정 감정 분류
-- dlib face detector로 얼굴 영역 추출
-- 예측 결과 반환 (emotion, confidence, probabilities)
-
-### 4. 클라이언트 처리
-
-#### 📥 입력 처리
-- 1초 주기 프레임 캡처 및 전처리 → API 전송
-
-#### 📤 API 호출 및 상태 관리
-- 성공: 감정 결과 저장
-- 실패: 에러 메시지 표시 (ex. "화면을 바라봐 주세요")
-
-#### 🎨 UI 반영
-- 좌측: 실시간 카메라 프리뷰
-- 우측: 감정별 확률 그래프 + 문장형 UX 피드백
-- 하단: "🙌 영상은 저장되지 않아요" 안내
-
-#### ✨ UX 개선
-- 감정별 이모지/닉네임 매핑:
-  ```
-  행복해 보여요 😊 / 화가 난 것 같아요 🔥 / 차분해 보여요 🌿 / ...
-  ```
+## Problem Definition
+While systems exist for collecting and analyzing emotional data, few connect these results to emotional reflection and feedback. There is a lack of continuous emotion recognition and self-understanding, and nonverbal signals (facial expressions, intonation) are often ignored. Connections to psychological interpretation models are also rare.
 
 ---
 
-## 🧪 감정 모델 상세 정보
-
-| 항목 | 내용 |
-|------|------|
-| 프레임워크 | TensorFlow + Keras |
-| 모델 파일 | `emotion_model.h5` |
-| 입력 | 64x64 grayscale 얼굴 이미지 |
-| 출력 | Angry, Disgust, Fear, Happy, Sad, Surprise, Neutral |
-| 서빙 방식 | Flask REST API (`/predict`) |
+## Key Proposal
+BeMore analyzes facial expressions, voice tone, and text to generate VAD-based emotion vectors. It provides CBT-based feedback and daily emotion reflection reports, supporting ongoing self-awareness and mental care.
 
 ---
 
-## 📂 프로젝트 디렉터리 구조
-
-```
-capstonedesign_flutter/
-│
-├── lib/
-│   ├── models/            # EmotionResult 모델
-│   ├── providers/         # EmotionProvider 상태관리
-│   ├── services/          # 서버 API 통신 모듈
-│   ├── screens/           # Home, Camera, History UI
-│   └── widgets/           # EmotionChart 등 컴포넌트
-│
-├── .env                   # 서버 주소 정의
-├── pubspec.yaml            # 의존성 및 설정
-└── main.dart               # 앱 진입점
-```
+## Main Features
+- Multimodal emotion recognition (face, voice, text)
+- VAD (Valence, Arousal, Dominance) emotion vector output
+- CBT-based personalized feedback
+- Emotion trend visualization and automatic PDF report generation
 
 ---
 
-## 📈 향후 확장 계획
-
-| 항목 | 설명 |
-|------|------|
-| 음성 텍스트 감정 분석 | 발화 기반 감정 인식 추가 예정 |
-| 감정 히스토리 기록 | 시계열 기반 감정 추적 기능 |
-| 정서 맞춤 피드백 | 감정 상태별 위로, 추천 문구 제공 |
-| PDF 감정 리포트 | 주간/월간 감정 요약 리포트 생성 기능 |
+## Data Flow Diagram
+1. Onboarding screens
+2. Counseling session screens
+3. Analysis result screens
 
 ---
 
-## ✨ 기타 특징
-
-- 💡 **앱 이름**: Emotion Analyzer → **마음온도 (MindThermo)** 로 리브랜딩
-- 🎨 **디자인 개선**:
-  - Google Fonts 적용
-  - 그라데이션/라운드 카드 UI 도입
-  - 실시간 분석 시 깜빡임 없는 UX 보장
-- 🧪 **개발 중 디버깅 향상**:
-  - DebugPrint 시도 횟수, 실패 원인, 타임스탬프 출력 강화
+## Tech Stack
+- **Infra:** Cloud, REST API
+- **Frontend:** Flutter (mobile/web)
+- **Backend:** Flask (Python)
+- **AI/ML Module:** TensorFlow, dlib, OpenAI Whisper
+- **Generative AI:** VAD Lexicon, FACS, MediaPipe, BERT
 
 ---
 
-## 🧑‍💻 개발자 정보
-
-| 이름 | 역할 |
-|------|------|
-| 우성종 | 전체 기획, UI/UX 리디자인, Flutter 클라이언트 개발, Flask 서버 개발 |
+## Expected Impact
+- Automated emotion reflection → Enhanced self-awareness
+- CBT-based feedback → Improved psychological resilience
+- Emotion trend reports → Habitual self-reflection
+- Precise analysis of nonverbal signals
 
 ---
 
-## 📮 문의 및 라이선스
+## References
+- Mehrabian & Russell (1974). VAD Emotional Model
+- Paul Ekman & Friesen (1978). Facial Action Coding System (FACS)
+- MediaPipe Face Landmarker – Google AI
+- Whisper – OpenAI Speech-to-Text
+- VAD Lexicon – NRC (Saif Mohammad)
+- CBT feedback structure (APA, Clinical Practice)
+- Korean papers: "MTCNN-based Facial Emotion Recognition System", "AI-based Regression BERT Model"
 
-- 📧 Email: sjwoo1999@korea.ac.kr
+---
+
+## Author & Advisor
+- **Woo Seongjong** (Dept. of Computer Convergence Software, Korea Univ.)
+- **Advisor:** Prof. Minseok Seo
 
 ---
