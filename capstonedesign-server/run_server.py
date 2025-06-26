@@ -14,7 +14,7 @@ import json
 from datetime import datetime
 
 # 서버 설정
-SERVER_HOST = "localhost"
+SERVER_HOST = "0.0.0.0"
 SERVER_PORT = 5001
 SERVER_URL = f"http://{SERVER_HOST}:{SERVER_PORT}"
 
@@ -398,7 +398,7 @@ def main():
             print("\n💡 다음 중 하나를 선택하세요:")
             print("   - 대화형 메뉴 사용 (권장)")
             print("   - 직접 API 호출")
-            print("   - 브라우저에서 http://localhost:5001/health 접속")
+            print("   - 브라우저에서 http://0.0.0.0:5001/health 접속")
             
             # 4. 대화형 메뉴 시작
             interactive_menu()
