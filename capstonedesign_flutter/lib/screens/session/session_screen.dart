@@ -1047,11 +1047,22 @@ class _SessionScreenState extends State<SessionScreen> {
           // 권한 상태 표시
           _buildPermissionStatus(),
           
-          // 대화 중 UI
+          // 대화 중 UI (버튼과 겹치지 않도록 조정)
           if (_conversationState == ConversationState.talking)
             _buildTalkingUI(),
           
-          // 대화 시작/종료 버튼 (항상 하단에 고정)
+          // 대화 시작 안내 문구 (대화 중이 아닐 때만)
+          if (_conversationState != ConversationState.talking)
+            Positioned(
+              bottom: 120,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: _buildStartGuideText(),
+              ),
+            ),
+          
+          // 대화 시작/종료 버튼 (항상 최하단에 고정)
           Positioned(
             bottom: 40,
             left: 0,
@@ -1062,17 +1073,6 @@ class _SessionScreenState extends State<SessionScreen> {
                 : _buildStartConversationButton(),
             ),
           ),
-          
-          // 대화 시작 안내 문구
-          if (_conversationState != ConversationState.talking)
-            Positioned(
-              bottom: 120,
-              left: 0,
-              right: 0,
-              child: Center(
-                child: _buildStartGuideText(),
-              ),
-            ),
           
           // 로딩 인디케이터
           if (_isLoading)
@@ -1090,7 +1090,7 @@ class _SessionScreenState extends State<SessionScreen> {
       left: 0,
       right: 0,
       child: Container(
-        padding: const EdgeInsets.all(24.0).copyWith(bottom: 48),
+        padding: const EdgeInsets.all(24.0).copyWith(bottom: 120), // 버튼 공간 확보
         decoration: _bottomGradient(),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1757,7 +1757,7 @@ class _SessionScreenState extends State<SessionScreen> {
 
   Widget _buildPermissionStatus() {
     return Positioned(
-      top: 60,
+      top: MediaQuery.of(context).padding.top + 20, // SafeArea 고려
       left: 16,
       right: 16,
       child: Container(
