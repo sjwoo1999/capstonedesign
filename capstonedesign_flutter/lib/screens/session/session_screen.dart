@@ -51,7 +51,7 @@ class _SessionScreenState extends State<SessionScreen> {
   CameraController? _cameraController;
   bool _isCameraInitialized = false;
   bool _hasCameraPermission = false;
-  bool _hasMicPermission = false;
+  bool _hasMicrophonePermission = false;
   String _cameraError = '';
 
   // 오디오 녹음 관련
@@ -62,8 +62,8 @@ class _SessionScreenState extends State<SessionScreen> {
   // STT 관련
   late stt.SpeechToText _speech;
   bool _isListening = false;
-  String _recognizedText = "";
-  double _soundLevel = 0.0;
+  String _recognizedText = '';
+  double _currentSoundLevel = 0.0;
 
   // API 서비스 (한 번만 초기화)
   late final EmotionAPIService _apiService;
@@ -80,6 +80,9 @@ class _SessionScreenState extends State<SessionScreen> {
   String _currentEmotion = '';
   String _currentFaceEmotion = '';
 
+  // 상태 변수들
+  bool _isLoading = false;
+
   @override
   void initState() {
     super.initState();
@@ -92,7 +95,11 @@ class _SessionScreenState extends State<SessionScreen> {
     _speech = stt.SpeechToText();
     
     _initializeDeviceInfo();
-    _checkPermissions();
+    
+    // 앱이 완전히 로드된 후 권한 확인
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkPermissions();
+    });
     
     // 주제 컨트롤러 리스너 추가
     _topicController.addListener(() {
@@ -143,6 +150,10 @@ class _SessionScreenState extends State<SessionScreen> {
   Future<void> _checkPermissions() async {
     // 권한 상태 확인
     await _checkCameraPermission();
+    
+    // 권한 요청 간격을 늘려서 iOS에서 더 안정적으로 처리
+    await Future.delayed(const Duration(seconds: 2));
+    
     await _checkMicPermission();
 
     // 시뮬레이터가 아니고 카메라 권한이 있을 때만 카메라 초기화
@@ -206,8 +217,8 @@ class _SessionScreenState extends State<SessionScreen> {
         }
         
         // 잠시 대기 후 권한 요청 (iOS에서 더 안정적)
-        print('📱 500ms 대기 후 권한 요청 시작...');
-        await Future.delayed(const Duration(milliseconds: 500));
+        print('📱 2초 대기 후 권한 요청 시작...');
+        await Future.delayed(const Duration(seconds: 2));
         
         print('📱 카메라 권한 요청 시작...');
         final result = await Permission.camera.request();
@@ -222,9 +233,25 @@ class _SessionScreenState extends State<SessionScreen> {
           await _initializeCamera();
         } else {
           print('❌ 카메라 권한 요청이 거부됨');
-          if (mounted) {
-            print('📱 권한 거부 다이얼로그 표시...');
-            await _showPermissionDeniedDialog('카메라');
+          
+          // 권한 요청 실패 시 한 번 더 시도
+          print('📱 카메라 권한 재요청 시도...');
+          await Future.delayed(const Duration(seconds: 1));
+          final retryResult = await Permission.camera.request();
+          print('📱 카메라 권한 재요청 결과: $retryResult');
+          
+          if (retryResult.isGranted) {
+            print('✅ 카메라 권한 재요청 성공, 카메라 초기화 시작');
+            setState(() {
+              _hasCameraPermission = true;
+            });
+            await _initializeCamera();
+          } else {
+            print('❌ 카메라 권한 재요청도 실패');
+            if (mounted) {
+              print('📱 권한 거부 다이얼로그 표시...');
+              await _showPermissionDeniedDialog('카메라');
+            }
           }
         }
       } else if (status.isPermanentlyDenied) {
@@ -279,7 +306,7 @@ class _SessionScreenState extends State<SessionScreen> {
       if (status.isGranted) {
         print('✅ permission_handler 권한 확인됨');
         setState(() {
-          _hasMicPermission = true;
+          _hasMicrophonePermission = true;
         });
         return;
       } else if (status.isDenied) {
@@ -295,7 +322,7 @@ class _SessionScreenState extends State<SessionScreen> {
           if (!shouldRequest) {
             print('❌ 사용자가 마이크 권한 요청을 취소함');
             setState(() {
-              _hasMicPermission = false;
+              _hasMicrophonePermission = false;
             });
             return;
           }
@@ -305,7 +332,7 @@ class _SessionScreenState extends State<SessionScreen> {
         final result = await Permission.microphone.request();
         print('🎤 마이크 권한 요청 결과: $result');
         setState(() {
-          _hasMicPermission = result.isGranted;
+          _hasMicrophonePermission = result.isGranted;
         });
         
         if (!result.isGranted && mounted) {
@@ -315,7 +342,7 @@ class _SessionScreenState extends State<SessionScreen> {
       } else if (status.isPermanentlyDenied) {
         print('🚫 마이크 권한 영구 거부됨');
         setState(() {
-          _hasMicPermission = false;
+          _hasMicrophonePermission = false;
         });
         
         if (mounted) {
@@ -328,7 +355,7 @@ class _SessionScreenState extends State<SessionScreen> {
       } else if (status.isRestricted) {
         print('🚫 마이크 권한 제한됨 (부모 제어 등)');
         setState(() {
-          _hasMicPermission = false;
+          _hasMicrophonePermission = false;
         });
         
         if (mounted) {
@@ -349,22 +376,22 @@ class _SessionScreenState extends State<SessionScreen> {
       if (hasRecordPermission) {
         print('✅ record 패키지 권한 확인됨');
         setState(() {
-          _hasMicPermission = true;
+          _hasMicrophonePermission = true;
         });
         return;
       }
       
       print('❓ 알 수 없는 마이크 권한 상태');
       setState(() {
-        _hasMicPermission = false;
+        _hasMicrophonePermission = false;
       });
       
-      print('🎤 최종 마이크 권한 상태: $_hasMicPermission');
+      print('🎤 최종 마이크 권한 상태: $_hasMicrophonePermission');
       
     } catch (e) {
       print('❌ 마이크 권한 확인 중 오류: $e');
       setState(() {
-        _hasMicPermission = false;
+        _hasMicrophonePermission = false;
       });
     }
   }
@@ -583,17 +610,33 @@ class _SessionScreenState extends State<SessionScreen> {
   }
 
   void _startConversation() {
-    if (!_isCameraInitialized || _cameraController == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('카메라가 준비되지 않았습니다. 잠시 후 다시 시도해주세요.')),
-      );
+    // 카메라 권한이 없어도 음성 분석으로 진행 가능
+    if (!_isCameraInitialized && !_hasCameraPermission) {
+      print('📱 카메라 없이 음성 분석만으로 진행');
+      setState(() {
+        _conversationState = ConversationState.talking;
+        _conversationStartTime = DateTime.now();
+      });
+      
+      print('🎤 음성 분석만으로 대화 시작: ${_conversationTopic.isNotEmpty ? _conversationTopic : "자유 대화"}');
+      
+      // 음성 분석만 시작
+      _startVoiceOnlyAnalysis();
       return;
     }
 
-    if (_conversationTopic.isEmpty) {
+    if (!_isCameraInitialized || _cameraController == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('대화 주제를 입력해주세요.')),
+        const SnackBar(content: Text('카메라가 준비되지 않았습니다. 음성 분석만으로 진행합니다.')),
       );
+      
+      setState(() {
+        _conversationState = ConversationState.talking;
+        _conversationStartTime = DateTime.now();
+      });
+      
+      print('🎤 카메라 없이 음성 분석만으로 대화 시작');
+      _startVoiceOnlyAnalysis();
       return;
     }
 
@@ -602,10 +645,18 @@ class _SessionScreenState extends State<SessionScreen> {
       _conversationStartTime = DateTime.now();
     });
     
-    print('🎤 대화 시작: $_conversationTopic');
+    print('🎤 멀티모달 대화 시작: ${_conversationTopic.isNotEmpty ? _conversationTopic : "자유 대화"}');
     
     // 실시간 감정 분석 시뮬레이션 시작
     _startRealTimeAnalysis();
+  }
+
+  // 음성 분석만으로 진행하는 메서드
+  void _startVoiceOnlyAnalysis() {
+    print('🎤 === 음성 분석만으로 진행 ===');
+    
+    // STT 기반 음성 인식 시작
+    _tryAudioRecordingSeparately();
   }
 
   void _endConversation() async {
@@ -777,7 +828,7 @@ class _SessionScreenState extends State<SessionScreen> {
 
   Future<void> _startAudioRecording() async {
     print('🎤 === 음성 녹음 시작 시도 ===');
-    print('🎤 마이크 권한 상태: $_hasMicPermission');
+    print('🎤 마이크 권한 상태: $_hasMicrophonePermission');
     print('🎤 시뮬레이터 여부: $_isSimulator');
     
     // 시뮬레이터에서는 음성 녹음 제한
@@ -787,7 +838,7 @@ class _SessionScreenState extends State<SessionScreen> {
     }
     
     // 실제 디바이스에서 권한이 없으면 권한 요청
-    if (!_hasMicPermission) {
+    if (!_hasMicrophonePermission) {
       print('🎤 마이크 권한이 없어 음성 녹음을 시작할 수 없습니다.');
       throw Exception('마이크 권한이 없습니다.');
     }
@@ -984,79 +1035,89 @@ class _SessionScreenState extends State<SessionScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // 카메라 준비 중이면 로딩
-    if (!_isCameraInitialized) {
-      return const Scaffold(
-        backgroundColor: Colors.black,
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
-    // 준비 완료면 대화 UI (권한 상태와 관계없이)
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // 1. 카메라 미리보기 (전체 배경)
-          Positioned.fill(child: _buildCameraPreview()),
-
-          // 2. 상단 UI (뒤로가기, 대화 시간)
-          _buildTopBar(),
+          // 카메라 프리뷰
+          if (_isCameraInitialized && _cameraController != null && _hasCameraPermission)
+            CameraPreview(_cameraController!),
           
-          // 3. 하단 컨트롤 UI (감정 상태, 버튼)
-          if (_conversationState == ConversationState.ready) _buildReadyUI(),
-          if (_conversationState == ConversationState.talking) _buildTalkingUI(),
+          // 카메라가 없을 때 배경
+          if (!_isCameraInitialized || !_hasCameraPermission)
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0xFF1a1a2e), Color(0xFF16213e)],
+                ),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      !_hasCameraPermission ? Icons.camera_alt_outlined : Icons.camera_alt,
+                      size: 80,
+                      color: Colors.white.withOpacity(0.3),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      !_hasCameraPermission 
+                          ? '카메라 권한이 필요합니다'
+                          : '카메라를 초기화하는 중...',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.7),
+                        fontSize: 18,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          
+          // 권한 상태 표시
+          _buildPermissionStatus(),
+          
+          // 대화 중 UI
+          if (_conversationState == ConversationState.talking)
+            _buildTalkingUI(),
+          
+          // 대화 시작/종료 버튼 (항상 하단에 고정)
+          Positioned(
+            bottom: 40,
+            left: 0,
+            right: 0,
+            child: Center(
+              child: _conversationState == ConversationState.talking
+                ? _buildEndConversationButton()
+                : _buildStartConversationButton(),
+            ),
+          ),
+          
+          // 대화 시작 안내 문구
+          if (_conversationState != ConversationState.talking)
+            Positioned(
+              bottom: 120,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: _buildStartGuideText(),
+              ),
+            ),
+          
+          // 로딩 인디케이터
+          if (_isLoading)
+            const Center(
+              child: CircularProgressIndicator(color: Colors.white),
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildTopBar() {
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: Container(
-        padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top, left: 4, right: 16),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.black.withOpacity(0.6),
-              Colors.black.withOpacity(0.0),
-            ],
-          ),
-        ),
-        child: Row(
-          children: [
-            const BackButton(color: Colors.white),
-            const Spacer(),
-            if (_conversationState == ConversationState.talking)
-              TimerBuilder.periodic(
-                const Duration(seconds: 1),
-                builder: (context) {
-                  final duration = DateTime.now().difference(_conversationStartTime!);
-                  final minutes = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
-                  final seconds = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
-                  return Text(
-                    '$minutes:$seconds',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      shadows: [Shadow(blurRadius: 2, color: Colors.black54)],
-                    ),
-                  );
-                },
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildReadyUI() {
-    // 대화 준비 상태의 UI
+  Widget _buildTalkingUI() {
     return Positioned(
       bottom: 0,
       left: 0,
@@ -1067,147 +1128,112 @@ class _SessionScreenState extends State<SessionScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              '오늘의 대화',
-              style: TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '어떤 이야기를 나누고 싶으신가요?\n편안한 마음으로 대화를 시작해보세요.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 16),
-            ),
-            const SizedBox(height: 24),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.75),
-                borderRadius: BorderRadius.circular(30),
-              ),
-              child: TextField(
-                controller: _topicController,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.black87, fontSize: 18),
-                cursorColor: Colors.black54,
-                decoration: InputDecoration(
-                  hintText: '대화 주제 (선택 사항)',
-                  hintStyle: TextStyle(color: Colors.black.withOpacity(0.4)),
-                  border: InputBorder.none,
+            // 대화 주제 표시
+            if (_conversationTopic.isNotEmpty) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '주제: $_conversationTopic',
+                  style: const TextStyle(color: Colors.white, fontSize: 14),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
+              const SizedBox(height: 16),
+            ],
+            
+            // 카메라 상태 안내
+            if (!_isCameraInitialized || !_hasCameraPermission) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.mic, color: Colors.white, size: 16),
+                    const SizedBox(width: 8),
+                    Text(
+                      '음성 분석 모드',
+                      style: TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+            
+            // 실시간 분석 상태
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.privacy_tip_outlined, size: 16, color: Colors.white.withOpacity(0.7)),
+                Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: _isAnalyzing ? Colors.green : Colors.grey,
+                    shape: BoxShape.circle,
+                  ),
+                ),
                 const SizedBox(width: 8),
                 Text(
-                  '대화 내용은 저장되거나 녹화되지 않습니다.',
-                  style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12),
+                  _isAnalyzing ? '실시간 감정 분석 중...' : '대화를 시작해주세요',
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.9),
+                    fontSize: 16,
+                  ),
                 ),
               ],
             ),
             const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: _startConversation, // 주제가 비어있어도 시작 가능
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: Colors.black,
-                shape: const CircleBorder(),
-                padding: const EdgeInsets.all(24),
-                elevation: 8,
-                shadowColor: Colors.white.withOpacity(0.5),
+            
+            // 음성 레벨 표시
+            if (_currentSoundLevel > 0) ...[
+              Container(
+                width: double.infinity,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+                child: FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: _currentSoundLevel.clamp(0.0, 1.0),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
               ),
-              child: const Icon(Icons.play_arrow, size: 40),
-            ),
+              const SizedBox(height: 8),
+            ],
+            
+            // 인식된 텍스트 표시
+            if (_recognizedText.isNotEmpty) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  _recognizedText,
+                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildTalkingUI() {
-    // 대화 중 상태의 UI
-    return Stack(
-      children: [
-        // 음성 파형 표시 (STT 중일 때)
-        if (_isListening)
-          Positioned(
-            bottom: 120,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Column(
-                children: [
-                  // 음성 파형
-                  Container(
-                    width: 200,
-                    height: 60,
-                    child: CustomPaint(
-                      painter: SoundWavePainter(_soundLevel),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  // 인식된 텍스트 표시
-                  if (_recognizedText.isNotEmpty)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.withOpacity(0.9),
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.3),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: Text(
-                        _recognizedText,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        Positioned(
-          bottom: 0,
-          left: 0,
-          right: 0,
-          child: Container(
-            padding: const EdgeInsets.all(24.0).copyWith(bottom: 48),
-            decoration: _bottomGradient(),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                FloatingActionButton(
-                  onPressed: _showNotesModal,
-                  backgroundColor: Colors.white.withOpacity(0.2),
-                  elevation: 0,
-                  heroTag: 'notes',
-                  child: const Icon(Icons.edit_note_outlined, color: Colors.white),
-                ),
-                _buildAnalysisIndicator(),
-                FloatingActionButton(
-                  onPressed: _endConversation,
-                  backgroundColor: Colors.red,
-                  heroTag: 'end',
-                  child: const Icon(Icons.stop, color: Colors.white),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
     );
   }
 
@@ -1575,7 +1601,7 @@ class _SessionScreenState extends State<SessionScreen> {
         },
         onSoundLevelChange: (level) {
           setState(() {
-            _soundLevel = level ?? 0.0;
+            _currentSoundLevel = level ?? 0.0;
           });
           // 음성 파형 분석 추가 (null 체크)
           if (level != null) {
@@ -1618,7 +1644,7 @@ class _SessionScreenState extends State<SessionScreen> {
           },
           onSoundLevelChange: (level) {
             setState(() {
-              _soundLevel = level ?? 0.0;
+              _currentSoundLevel = level ?? 0.0;
             });
             // 음성 파형 분석 추가 (null 체크)
             if (level != null) {
@@ -1675,20 +1701,6 @@ class _SessionScreenState extends State<SessionScreen> {
         
         _sessionData.add(newDataPoint);
         print('📊 텍스트 VAD 데이터 수신: ${jsonEncode(newDataPoint.toJson())}');
-        
-        // UI 업데이트
-        if (mounted) {
-          setState(() {
-            _currentEmotion = result['emotion_tag'] ?? '';
-            _currentFaceEmotion = result['text_emotion'] ?? '';
-          });
-        }
-      }
-      
-      // 인식된 텍스트를 대화 노트에 추가
-      if (text.isNotEmpty) {
-        _conversationNotes.add('음성 인식: $text');
-        print('📝 대화 노트에 음성 인식 텍스트 추가: $text');
       }
       
     } catch (e) {
@@ -1699,7 +1711,7 @@ class _SessionScreenState extends State<SessionScreen> {
   // 실시간 음성 파형 분석 (VAD 추정)
   void _analyzeSoundLevel(double level) {
     setState(() {
-      _soundLevel = level;
+      _currentSoundLevel = level;
     });
     
     // 음성 파형을 기반으로 간단한 VAD 추정
@@ -1733,6 +1745,250 @@ class _SessionScreenState extends State<SessionScreen> {
       'arousal': arousal,
       'dominance': dominance,
     };
+  }
+
+  Widget _buildPermissionStatus() {
+    return Positioned(
+      top: 60,
+      left: 16,
+      right: 16,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.7),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  _hasCameraPermission ? Icons.camera_alt : Icons.camera_alt_outlined,
+                  color: _hasCameraPermission ? Colors.green : Colors.orange,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '카메라',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  _hasCameraPermission ? '사용 가능' : '권한 필요',
+                  style: TextStyle(
+                    color: _hasCameraPermission ? Colors.green : Colors.orange,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(
+                  _hasMicrophonePermission ? Icons.mic : Icons.mic_off,
+                  color: _hasMicrophonePermission ? Colors.green : Colors.red,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '마이크',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  _hasMicrophonePermission ? '사용 가능' : '권한 필요',
+                  style: TextStyle(
+                    color: _hasMicrophonePermission ? Colors.green : Colors.red,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+            if (!_hasCameraPermission || !_hasMicrophonePermission) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, color: Colors.orange, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        !_hasCameraPermission && !_hasMicrophonePermission
+                            ? '카메라와 마이크 권한이 필요합니다. 설정에서 권한을 허용해주세요.'
+                            : !_hasCameraPermission
+                                ? '카메라 권한이 없어도 음성 분석으로 진행 가능합니다.'
+                                : '마이크 권한이 필요합니다. 설정에서 권한을 허용해주세요.',
+                        style: TextStyle(color: Colors.orange, fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 대화 시작 버튼
+  Widget _buildStartConversationButton() {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(50),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF6366F1).withOpacity(0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: ElevatedButton(
+        onPressed: _startConversation,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(50),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.play_arrow, color: Colors.white, size: 24),
+            const SizedBox(width: 8),
+            const Text(
+              '대화 시작',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 대화 종료 버튼
+  Widget _buildEndConversationButton() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.red.withOpacity(0.8),
+        borderRadius: BorderRadius.circular(50),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.red.withOpacity(0.3),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: ElevatedButton(
+        onPressed: _endConversation,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(50),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.stop, color: Colors.white, size: 24),
+            const SizedBox(width: 8),
+            const Text(
+              '대화 종료',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 대화 시작 안내 문구
+  Widget _buildStartGuideText() {
+    String guideText = '';
+    String subText = '';
+    
+    if (!_hasCameraPermission && !_hasMicrophonePermission) {
+      guideText = '권한을 허용한 후 대화를 시작하세요';
+      subText = '카메라와 마이크 권한이 필요합니다';
+    } else if (!_hasCameraPermission) {
+      guideText = '음성 분석만으로 대화를 시작할 수 있습니다';
+      subText = '카메라 권한 없이도 음성으로 감정을 분석합니다';
+    } else if (!_hasMicrophonePermission) {
+      guideText = '얼굴 분석만으로 대화를 시작할 수 있습니다';
+      subText = '마이크 권한 없이도 표정으로 감정을 분석합니다';
+    } else {
+      guideText = '버튼을 눌러 대화를 시작하세요';
+      subText = '실시간으로 감정을 분석해드립니다';
+    }
+    
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.6),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.2),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            guideText,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          if (subText.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              subText,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.7),
+                fontSize: 14,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ],
+      ),
+    );
   }
 }
 
