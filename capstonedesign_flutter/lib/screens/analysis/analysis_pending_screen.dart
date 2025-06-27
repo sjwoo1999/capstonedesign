@@ -28,27 +28,35 @@ class _AnalysisPendingScreenState extends State<AnalysisPendingScreen> {
 
   void _performAnalysis() async {
     // 즉시 분석 수행
-    setState(() {
-      _statusMessage = 'VAD 데이터 분석 중...';
-    });
+    if (mounted) {
+      setState(() {
+        _statusMessage = 'VAD 데이터 분석 중...';
+      });
+    }
     
     await Future.delayed(const Duration(milliseconds: 500));
     
-    setState(() {
-      _statusMessage = '감정 패턴 분석 중...';
-    });
+    if (mounted) {
+      setState(() {
+        _statusMessage = '감정 패턴 분석 중...';
+      });
+    }
     
     await Future.delayed(const Duration(milliseconds: 500));
     
-    setState(() {
-      _statusMessage = 'CBT 피드백 생성 중...';
-    });
+    if (mounted) {
+      setState(() {
+        _statusMessage = 'CBT 피드백 생성 중...';
+      });
+    }
     
     await Future.delayed(const Duration(milliseconds: 500));
     
-    setState(() {
-      _statusMessage = '분석 완료!';
-    });
+    if (mounted) {
+      setState(() {
+        _statusMessage = '분석 완료!';
+      });
+    }
     
     await Future.delayed(const Duration(milliseconds: 300));
     

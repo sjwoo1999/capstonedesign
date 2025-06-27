@@ -195,103 +195,41 @@ class _SessionScreenState extends State<SessionScreen> {
           _hasCameraPermission = true;
         });
         await _initializeCamera();
-      } else if (status.isDenied) {
+        return; // 이미 권한이 있으면 종료
+      }
+      
+      // 권한이 없으면 한 번만 요청
+      if (status.isDenied && mounted) {
         print('📱 카메라 권한이 거부됨, 사용자에게 설명 제공');
         
-        // iOS에서 권한 요청 전에 사용자에게 명확한 안내 제공
-        if (mounted) {
-          print('📱 권한 설명 다이얼로그 표시 시작...');
-          final shouldRequest = await _showPermissionDialog(
-            '카메라 권한 필요',
-            '실시간 감정 분석을 위해 카메라 접근 권한이 필요합니다.\n\n얼굴 표정을 분석하여 감정 상태를 파악합니다.',
-            '권한 허용',
-            '나중에',
-          );
-          print('📱 사용자 선택 결과: $shouldRequest');
-          
-          if (!shouldRequest) {
-            print('❌ 사용자가 카메라 권한 요청을 취소함');
-            setState(() {
-              _hasCameraPermission = false;
-              _conversationState = ConversationState.ready;
-            });
-            return;
-          }
-        } else {
-          print('⚠️ 위젯이 마운트되지 않아 다이얼로그를 표시할 수 없음');
+        final shouldRequest = await _showPermissionDialog(
+          '카메라 권한 필요',
+          '실시간 감정 분석을 위해 카메라 접근 권한이 필요합니다.\n\n얼굴 표정을 분석하여 감정 상태를 파악합니다.',
+          '권한 허용',
+          '나중에',
+        );
+        
+        if (!shouldRequest) {
+          print('❌ 사용자가 카메라 권한 요청을 취소함');
+          setState(() {
+            _hasCameraPermission = false;
+            _conversationState = ConversationState.ready;
+          });
+          return;
         }
         
-        // 잠시 대기 후 권한 요청 (iOS에서 더 안정적)
-        print('📱 2초 대기 후 권한 요청 시작...');
+        // 권한 요청
         await Future.delayed(const Duration(seconds: 2));
-        
-        print('📱 카메라 권한 요청 시작...');
         final result = await Permission.camera.request();
-        print('📱 카메라 권한 요청 결과: $result');
         
         setState(() {
           _hasCameraPermission = result.isGranted;
         });
         
         if (result.isGranted) {
-          print('✅ 카메라 권한 허용됨, 카메라 초기화 시작');
           await _initializeCamera();
-        } else {
-          print('❌ 카메라 권한 요청이 거부됨');
-          
-          // 권한 요청 실패 시 한 번 더 시도
-          print('📱 카메라 권한 재요청 시도...');
-          await Future.delayed(const Duration(seconds: 1));
-          final retryResult = await Permission.camera.request();
-          print('📱 카메라 권한 재요청 결과: $retryResult');
-          
-          if (retryResult.isGranted) {
-            print('✅ 카메라 권한 재요청 성공, 카메라 초기화 시작');
-            setState(() {
-              _hasCameraPermission = true;
-            });
-            await _initializeCamera();
-          } else {
-            print('❌ 카메라 권한 재요청도 실패');
-            if (mounted) {
-              print('📱 권한 거부 다이얼로그 표시...');
-              await _showPermissionDeniedDialog('카메라');
-            }
-          }
         }
-      } else if (status.isPermanentlyDenied) {
-        print('🚫 카메라 권한 영구 거부됨');
-        setState(() {
-          _hasCameraPermission = false;
-        });
-        
-        if (mounted) {
-          final shouldOpenSettings = await _showPermissionDeniedDialog('카메라');
-          if (shouldOpenSettings) {
-            await openAppSettings();
-          }
-        }
-        
-        // 영구 거부된 경우에도 카메라 초기화 시도 (이전에 허용된 경우 작동할 수 있음)
-        try {
-          await _initializeCamera();
-          if (_cameraController != null && _cameraController!.value.isInitialized) {
-            print('✅ 카메라 초기화 성공 (영구 거부 상태이지만 실제로는 작동)');
-            setState(() {
-              _hasCameraPermission = true;
-            });
-          }
-        } catch (e) {
-          print('❌ 카메라 초기화 실패 (영구 거부): $e');
-        }
-      } else {
-        print('❓ 알 수 없는 카메라 권한 상태: $status');
-        setState(() {
-          _hasCameraPermission = false;
-        });
       }
-      
-      print('📱 최종 카메라 권한 상태: $_hasCameraPermission');
       
     } catch (e) {
       print('❌ 카메라 권한 확인 중 오류: $e');
@@ -682,21 +620,33 @@ class _SessionScreenState extends State<SessionScreen> {
       _conversationEndTime = DateTime.now();
     });
     
+    // 디바운스 타이머 정리
+    _textDebounceTimer?.cancel();
+    
+    // 카메라 스트림 중지
     if (_cameraController != null && _cameraController!.value.isStreamingImages) {
       _cameraController?.stopImageStream();
     }
+    
+    // 오디오 녹음 중지
     await _stopAudioRecording();
+    
+    // STT 중지 및 마지막 텍스트 처리
     await _stopSTTListening();
+    
     print('🔚 대화 종료, 분석 데이터 (${_sessionData.length}개) 전송 준비');
     
     // 실제 앱에서는 여기서 서버로 _sessionData 를 json으로 변환하여 전송합니다.
     final payload = jsonEncode(_sessionData.map((d) => d.toJson()).toList());
     print('📦 전송될 최종 데이터: $payload');
     
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (context) => AnalysisPendingScreen(sessionData: _sessionData)),
-      (route) => false, // 현재까지의 모든 라우트를 스택에서 제거
-    );
+    // 분석 화면으로 이동
+    if (mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => AnalysisPendingScreen(sessionData: _sessionData)),
+        (route) => false, // 현재까지의 모든 라우트를 스택에서 제거
+      );
+    }
   }
 
   void _startRealTimeAnalysis() {
