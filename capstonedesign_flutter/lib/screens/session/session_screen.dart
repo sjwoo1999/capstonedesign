@@ -63,7 +63,9 @@ class _SessionScreenState extends State<SessionScreen> {
   late stt.SpeechToText _speech;
   bool _isListening = false;
   String _recognizedText = '';
+  String _lastSentText = ''; // 마지막으로 전송된 텍스트 (중복 방지)
   double _currentSoundLevel = 0.0;
+  Timer? _textDebounceTimer; // 텍스트 디바운스 타이머
 
   // API 서비스 (한 번만 초기화)
   late final EmotionAPIService _apiService;
@@ -113,6 +115,9 @@ class _SessionScreenState extends State<SessionScreen> {
   void dispose() {
     _topicController.dispose();
     _noteController.dispose();
+    
+    // 텍스트 디바운스 타이머 정리
+    _textDebounceTimer?.cancel();
     
     // 카메라 컨트롤러 정리
     if (_cameraController != null && _cameraController!.value.isStreamingImages) {
@@ -616,6 +621,9 @@ class _SessionScreenState extends State<SessionScreen> {
       setState(() {
         _conversationState = ConversationState.talking;
         _conversationStartTime = DateTime.now();
+        // 텍스트 초기화
+        _recognizedText = '';
+        _lastSentText = '';
       });
       
       print('🎤 음성 분석만으로 대화 시작: ${_conversationTopic.isNotEmpty ? _conversationTopic : "자유 대화"}');
@@ -633,9 +641,12 @@ class _SessionScreenState extends State<SessionScreen> {
       setState(() {
         _conversationState = ConversationState.talking;
         _conversationStartTime = DateTime.now();
+        // 텍스트 초기화
+        _recognizedText = '';
+        _lastSentText = '';
       });
       
-      print('🎤 카메라 없이 음성 분석만으로 대화 시작');
+      print('🎤 음성 분석만으로 대화 시작: ${_conversationTopic.isNotEmpty ? _conversationTopic : "자유 대화"}');
       _startVoiceOnlyAnalysis();
       return;
     }
@@ -643,12 +654,18 @@ class _SessionScreenState extends State<SessionScreen> {
     setState(() {
       _conversationState = ConversationState.talking;
       _conversationStartTime = DateTime.now();
+      // 텍스트 초기화
+      _recognizedText = '';
+      _lastSentText = '';
     });
     
     print('🎤 멀티모달 대화 시작: ${_conversationTopic.isNotEmpty ? _conversationTopic : "자유 대화"}');
     
-    // 실시간 감정 분석 시뮬레이션 시작
-    _startRealTimeAnalysis();
+    // 카메라 스트림 시작
+    _startImageAnalysis();
+    
+    // 음성 분석 시작
+    _startVoiceOnlyAnalysis();
   }
 
   // 음성 분석만으로 진행하는 메서드
@@ -1557,6 +1574,12 @@ class _SessionScreenState extends State<SessionScreen> {
   Future<void> _startSTTListening() async {
     print('🎤 === STT 음성 인식 시작 ===');
     
+    // 텍스트 초기화
+    setState(() {
+      _recognizedText = '';
+      _lastSentText = '';
+    });
+    
     bool available = await _speech.initialize(
       onError: (val) {
         print("STT Error: ${val.errorMsg}");
@@ -1589,14 +1612,24 @@ class _SessionScreenState extends State<SessionScreen> {
       setState(() => _isListening = true);
       _speech.listen(
         onResult: (val) {
+          final newText = val.recognizedWords.trim();
+          
           setState(() {
-            _recognizedText = val.recognizedWords;
-            print('🎤 인식된 텍스트: $_recognizedText');
+            _recognizedText = newText;
           });
           
-          // 부분 결과가 있으면 즉시 서버로 전송
-          if (val.recognizedWords.isNotEmpty && val.finalResult) {
-            _sendTextToServer(val.recognizedWords);
+          // 새로운 텍스트가 있고, 이전에 전송하지 않은 텍스트인 경우에만 처리
+          if (newText.isNotEmpty && newText != _lastSentText) {
+            print('🎤 새로운 텍스트 인식: $newText');
+            
+            // 디바운스 타이머로 중복 전송 방지
+            _textDebounceTimer?.cancel();
+            _textDebounceTimer = Timer(const Duration(milliseconds: 1500), () {
+              if (newText.isNotEmpty && newText != _lastSentText) {
+                _sendTextToServer(newText);
+                _lastSentText = newText;
+              }
+            });
           }
         },
         onSoundLevelChange: (level) {
@@ -1610,8 +1643,8 @@ class _SessionScreenState extends State<SessionScreen> {
         },
         localeId: 'ko_KR', // 한국어 설정
         listenFor: const Duration(seconds: 30),
-        pauseFor: const Duration(seconds: 5), // 일시 정지 시간 증가
-        partialResults: true,
+        pauseFor: const Duration(seconds: 3), // 일시 정지 시간 단축
+        partialResults: false, // 부분 결과 비활성화로 중복 방지
         cancelOnError: false,
         listenMode: stt.ListenMode.dictation, // dictation 모드로 변경 (더 자연스러운 인식)
         onDevice: false, // 서버 기반 인식 사용
@@ -1627,19 +1660,39 @@ class _SessionScreenState extends State<SessionScreen> {
     if (!_isListening) return;
     
     try {
+      // 디바운스 타이머 정리
+      _textDebounceTimer?.cancel();
+      
       await _speech.stop();
       await Future.delayed(const Duration(milliseconds: 500));
+      
+      // 텍스트 초기화
+      setState(() {
+        _recognizedText = '';
+        _lastSentText = '';
+      });
       
       if (_isListening) {
         _speech.listen(
           onResult: (val) {
+            final newText = val.recognizedWords.trim();
+            
             setState(() {
-              _recognizedText = val.recognizedWords;
-              print('🎤 재시작 후 인식된 텍스트: $_recognizedText');
+              _recognizedText = newText;
             });
             
-            if (val.recognizedWords.isNotEmpty && val.finalResult) {
-              _sendTextToServer(val.recognizedWords);
+            // 새로운 텍스트가 있고, 이전에 전송하지 않은 텍스트인 경우에만 처리
+            if (newText.isNotEmpty && newText != _lastSentText) {
+              print('🎤 재시작 후 새로운 텍스트 인식: $newText');
+              
+              // 디바운스 타이머로 중복 전송 방지
+              _textDebounceTimer?.cancel();
+              _textDebounceTimer = Timer(const Duration(milliseconds: 1500), () {
+                if (newText.isNotEmpty && newText != _lastSentText) {
+                  _sendTextToServer(newText);
+                  _lastSentText = newText;
+                }
+              });
             }
           },
           onSoundLevelChange: (level) {
@@ -1653,8 +1706,8 @@ class _SessionScreenState extends State<SessionScreen> {
           },
           localeId: 'ko_KR',
           listenFor: const Duration(seconds: 30),
-          pauseFor: const Duration(seconds: 5),
-          partialResults: true,
+          pauseFor: const Duration(seconds: 3),
+          partialResults: false, // 부분 결과 비활성화
           cancelOnError: false,
           listenMode: stt.ListenMode.dictation,
           onDevice: false,
@@ -1672,12 +1725,17 @@ class _SessionScreenState extends State<SessionScreen> {
       setState(() {
         _isListening = false;
       });
+      
+      // 디바운스 타이머 정리
+      _textDebounceTimer?.cancel();
+      
       _speech.stop();
       print('🔇 STT 음성 인식 중지');
       
-      // 인식된 텍스트가 있으면 서버로 전송
-      if (_recognizedText.isNotEmpty) {
+      // 인식된 텍스트가 있고, 아직 전송하지 않은 텍스트인 경우에만 서버로 전송
+      if (_recognizedText.isNotEmpty && _recognizedText != _lastSentText) {
         await _sendTextToServer(_recognizedText);
+        _lastSentText = _recognizedText;
       }
     }
   }
