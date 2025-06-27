@@ -21,7 +21,7 @@ dependencies:
   google_fonts: ^6.2.1
   flutter_launcher_icons: ^0.14.3
   # BeMore 앱을 위한 추가 의존성
-  speech_to_text: ^6.6.0
+  record: ^4.4.4
   permission_handler: ^11.3.1
   path_provider: ^2.1.4
   pdf: ^3.10.7
@@ -31,11 +31,13 @@ dependencies:
   lottie: ^3.1.2
   flutter_svg: ^2.0.10+1
   audioplayers: ^5.2.1
+  device_info_plus: ^10.1.0
   # VAD 감정 분석을 위한 의존성
   # google_ml_kit: ^0.17.0
   # CBT 피드백을 위한 의존성
   flutter_markdown: ^0.6.18
   timer_builder: ^2.0.0
+  speech_to_text: ^6.6.0
 
 dev_dependencies:
   flutter_test:

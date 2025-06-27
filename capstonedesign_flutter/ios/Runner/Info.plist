@@ -37,6 +37,42 @@
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>BeMore 앱은 대화 내용을 분석하여 감정 상태를 파악하기 위해 음성 인식 기능을 사용합니다. 이 정보는 개인화된 CBT 피드백을 제공하는 데 사용됩니다.</string>
     
+    <!-- 음성 인식 권한 (iOS 10 이상) -->
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>BeMore 앱은 실시간 음성 인식을 통해 감정 분석을 수행합니다. 음성 데이터는 서버로 전송되어 텍스트로 변환되고 감정 분석에 사용됩니다.</string>
+    
+    <!-- 오디오 세션 설정 -->
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>audio</string>
+        <string>voip</string>
+    </array>
+    
+    <!-- 오디오 세션 카테고리 설정 -->
+    <key>UIAudioSessionCategory</key>
+    <string>playAndRecord</string>
+    
+    <!-- 오디오 세션 모드 설정 -->
+    <key>UIAudioSessionMode</key>
+    <string>default</string>
+    
+    <!-- 오디오 세션 옵션 설정 -->
+    <key>UIAudioSessionCategoryOptions</key>
+    <array>
+        <string>allowBluetooth</string>
+        <string>allowBluetoothA2DP</string>
+        <string>defaultToSpeaker</string>
+        <string>mixWithOthers</string>
+    </array>
+    
+    <!-- 오디오 세션 중단 처리 -->
+    <key>UIAudioSessionInterruptionType</key>
+    <string>began</string>
+    
+    <!-- 오디오 세션 활성화 설정 -->
+    <key>UIAudioSessionSetActiveOptions</key>
+    <string>notifyOthersOnDeactivation</string>
+
     <key>UILaunchStoryboardName</key>
     <string>LaunchScreen</string>
     <key>UIMainStoryboardFile</key>

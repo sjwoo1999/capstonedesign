@@ -46,6 +46,16 @@ post_install do |installer|
          config.build_settings['PRODUCT_NAME']&.include?('TensorFlow')
         config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64'
       end
+      
+      # iOS 12.0 이상 설정 강제
+      config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '12.0'
+      
+      # 오디오 관련 설정
+      if config.build_settings['PRODUCT_NAME']&.include?('record') ||
+         config.build_settings['PRODUCT_NAME']&.include?('permission_handler')
+        config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] ||= ['$(inherited)']
+        config.build_settings['GCC_PREPROCESSOR_DEFINITIONS'] << 'PERMISSION_MICROPHONE=1'
+      end
     end
   end
 end
