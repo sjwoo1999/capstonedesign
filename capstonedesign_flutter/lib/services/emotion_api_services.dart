@@ -207,13 +207,12 @@ class EmotionAPIService {
           print('❌ 최대 재시도 횟수 초과, Mock 텍스트 VAD 데이터 사용');
           // Mock 텍스트 VAD 데이터 반환
           return {
+            'text_emotion': 'neutral',
             'text_vad': {
               'valence': 0.5,
-              'arousal': 0.4,
+              'arousal': 0.5,
               'dominance': 0.5
-            },
-            'emotion_tag': 'neutral',
-            'text_emotion': 'Neutral'
+            }
           };
         }
 
@@ -222,5 +221,108 @@ class EmotionAPIService {
     }
 
     throw Exception('예상치 못한 오류 발생');
+  }
+
+  /// 텍스트 감정 분석 (sendTextForAnalysis의 별칭)
+  Future<Map<String, dynamic>> analyzeTextEmotion(String text) async {
+    return await sendTextForAnalysis(text);
+  }
+
+  /// Gemini AI를 사용한 다음 질문 생성
+  Future<Map<String, dynamic>> generateNextQuestion({
+    required List<Map<String, dynamic>> conversationHistory,
+    String? emotionTag,
+    Map<String, double>? vadScore,
+  }) async {
+    int retryAttempts = 0;
+    const int maxRetryCount = 3;
+    const Duration retryDelay = Duration(seconds: 2);
+
+    while (retryAttempts < maxRetryCount) {
+      try {
+        print('🤖 Gemini 질문 생성 요청 시도 ${retryAttempts + 1}/$maxRetryCount');
+        print('📡 요청 URL: $_baseUrl/generate_question');
+        print('📊 대화 히스토리 길이: ${conversationHistory.length}');
+        print('😊 현재 감정: $emotionTag');
+        
+        final requestBody = {
+          "history": conversationHistory,
+          "emotion_tag": emotionTag,
+          "vad_score": vadScore,
+        };
+        
+        final response = await http.post(
+          Uri.parse('$_baseUrl/generate_question'),
+          headers: {"Content-Type": "application/json"},
+          body: jsonEncode(requestBody),
+        ).timeout(const Duration(seconds: 15)); // AI 생성은 더 오래 걸릴 수 있음
+
+        print('📡 Gemini 질문 생성 서버 응답 상태: ${response.statusCode}');
+
+        if (response.statusCode == 200) {
+          print('✅ Gemini 질문 생성 성공');
+          final responseData = jsonDecode(response.body);
+          print('🤖 생성된 질문: ${responseData['question']}');
+          return responseData;
+        } else {
+          print('❌ Gemini 질문 생성 서버 오류 응답: ${response.body}');
+          throw Exception(
+              '서버 오류: ${response.statusCode} ${response.reasonPhrase}');
+        }
+      } catch (e) {
+        retryAttempts++;
+        print('❗ Gemini 질문 생성 서버 연결 실패 [시도 $retryAttempts/$maxRetryCount]: $e');
+
+        if (retryAttempts >= maxRetryCount) {
+          print('❌ 최대 재시도 횟수 초과, Mock 질문 사용');
+          // Mock 질문 반환
+          return {
+            'success': true,
+            'question': _getMockQuestion(conversationHistory.length, emotionTag),
+            'model': 'mock',
+            'conversation_length': conversationHistory.length,
+            'emotion_tag': emotionTag
+          };
+        }
+
+        await Future.delayed(retryDelay);
+      }
+    }
+
+    throw Exception('예상치 못한 오류 발생');
+  }
+
+  /// Mock 질문 생성 (API 실패 시 사용)
+  String _getMockQuestion(int conversationLength, String? emotionTag) {
+    final mockQuestions = [
+      "오늘 하루 중 가장 기뻤던 순간은 언제였나요?",
+      "최근에 힘들었던 일은 무엇인가요?",
+      "지금 기분을 한 단어로 표현한다면?",
+      "가장 위로가 되는 것은 무엇인가요?",
+      "지금 가장 하고 싶은 것은 무엇인가요?",
+      "오늘 하루를 어떻게 보내고 싶으신가요?",
+      "가장 감사한 것은 무엇인가요?",
+      "지금 가장 필요한 것은 무엇인가요?",
+      "어떤 일이 가장 스트레스가 되나요?",
+      "기분이 좋아지는 방법은 무엇인가요?"
+    ];
+    
+    // 감정별 특화 질문
+    final emotionSpecificQuestions = {
+      'angry': "지금 어떤 상황이 가장 화가 나게 만드나요?",
+      'sad': "지금 가장 슬프게 만드는 것은 무엇인가요?",
+      'anxious': "지금 가장 걱정되는 것은 무엇인가요?",
+      'happy': "지금 기분이 좋은 이유는 무엇인가요?",
+      'neutral': "오늘 하루는 어땠나요?"
+    };
+    
+    // 감정별 질문이 있으면 사용, 없으면 일반 질문 사용
+    if (emotionTag != null && emotionSpecificQuestions.containsKey(emotionTag)) {
+      return emotionSpecificQuestions[emotionTag]!;
+    }
+    
+    // 대화 길이에 따라 질문 선택
+    final questionIndex = conversationLength % mockQuestions.length;
+    return mockQuestions[questionIndex];
   }
 }

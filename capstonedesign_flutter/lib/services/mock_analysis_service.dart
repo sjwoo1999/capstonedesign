@@ -19,17 +19,17 @@ class MockAnalysisService {
     'anxiety': '불안',
   };
 
-  static const Map<String, IconData> _emotionIcons = {
-    'joy': Icons.sentiment_very_satisfied,
-    'sadness': Icons.sentiment_very_dissatisfied,
-    'anger': Icons.sentiment_very_dissatisfied,
-    'fear': Icons.sentiment_dissatisfied,
-    'surprise': Icons.sentiment_satisfied_alt,
-    'disgust': Icons.sentiment_dissatisfied,
-    'neutral': Icons.sentiment_neutral,
-    'excitement': Icons.sentiment_satisfied,
-    'calm': Icons.sentiment_satisfied_alt,
-    'anxiety': Icons.sentiment_dissatisfied,
+  static const Map<String, String> _emotionIcons = {
+    'joy': '😄',
+    'sadness': '😢',
+    'anger': '😠',
+    'fear': '😨',
+    'surprise': '😲',
+    'disgust': '🤢',
+    'neutral': '😐',
+    'excitement': '😃',
+    'calm': '😌',
+    'anxiety': '😰',
   };
 
   /// 수집된 VAD 데이터를 기반으로 즉시 분석 결과 생성
@@ -59,7 +59,7 @@ class MockAnalysisService {
         'sessionDuration': _calculateSessionDuration(sessionData).inSeconds,
         'dataPoints': sessionData.length,
         'emotionCategory': emotionCategory,
-        'emotionIcon': _emotionIcons[emotionCategory]?.codePoint ?? 0xe3c9,
+        'emotionIcon': _emotionIcons[emotionCategory] ?? '😐',
         'confidence': _calculateConfidence(sessionData),
       },
       'vadStats': vadStats,
@@ -401,7 +401,7 @@ class MockAnalysisService {
         'sessionDuration': Duration.zero.inSeconds,
         'dataPoints': 0,
         'emotionCategory': 'neutral',
-        'emotionIcon': 0xe3c9,
+        'emotionIcon': '😐',
         'confidence': 0.0,
       },
       'vadStats': {'valence': 0.0, 'arousal': 0.0, 'dominance': 0.0},

@@ -6,6 +6,7 @@ import '../../providers/vad_provider.dart';
 import '../../providers/cbt_provider.dart';
 import '../../theme/bemore_theme.dart';
 import '../session/session_screen.dart';
+import '../chat/chat_screen.dart';
 import '../history/history_screen.dart';
 import '../settings/settings_screen.dart';
 
@@ -83,6 +84,11 @@ class HomeTab extends StatelessWidget {
               
               const SizedBox(height: 24),
               
+              // AI 대화 카드
+              _buildAIChatCard(context),
+              
+              const SizedBox(height: 24),
+              
               // 최근 피드백
               _buildRecentFeedback(context),
               
@@ -108,14 +114,14 @@ class HomeTab extends StatelessWidget {
               '안녕하세요!',
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                 color: BeMoreTheme.textPrimary,
-                fontWeight: FontWeight.bold,
+            fontWeight: FontWeight.bold,
               ),
-            ),
+          ),
             Text(
               '오늘도 BeMore와 함께 감정을 인식해보세요',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: BeMoreTheme.textSecondary,
-              ),
+        ),
             ),
           ],
         ),
@@ -185,7 +191,7 @@ class HomeTab extends StatelessWidget {
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
+      children: [
                           Text(
                             dominantEmotion,
                             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
@@ -198,10 +204,10 @@ class HomeTab extends StatelessWidget {
                             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               color: BeMoreTheme.textSecondary,
                             ),
-                          ),
+            ),
                         ],
-                      ),
-                    ),
+          ),
+        ),
                   ],
                 ),
               ],
@@ -280,11 +286,80 @@ class HomeTab extends StatelessWidget {
     );
   }
 
-  Widget _buildFeatureChip(String label, IconData icon) {
+  Widget _buildAIChatCard(BuildContext context) {
+    return Card(
+      child: InkWell(
+        onTap: () {
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (context) => const ChatScreen()),
+          );
+        },
+        borderRadius: BorderRadius.circular(16),
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: BeMoreTheme.accentColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.chat_bubble_outline,
+                      color: BeMoreTheme.accentColor,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'AI와 대화하기',
+                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          '음성으로 AI와 자연스럽게 대화하세요',
+                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: BeMoreTheme.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  _buildFeatureChip('음성 인식', Icons.mic, BeMoreTheme.accentColor),
+                  _buildFeatureChip('AI 응답', Icons.smart_toy, BeMoreTheme.accentColor),
+                  _buildFeatureChip('실시간 대화', Icons.chat, BeMoreTheme.accentColor),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFeatureChip(String label, IconData icon, [Color? color]) {
+    final chipColor = color ?? BeMoreTheme.primaryColor;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: BeMoreTheme.primaryColor.withOpacity(0.1),
+        color: chipColor.withOpacity(0.1),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
@@ -293,7 +368,7 @@ class HomeTab extends StatelessWidget {
           Icon(
             icon,
             size: 16,
-            color: BeMoreTheme.primaryColor,
+            color: chipColor,
           ),
           const SizedBox(width: 4),
           Text(
@@ -301,7 +376,7 @@ class HomeTab extends StatelessWidget {
             style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w500,
-              color: BeMoreTheme.primaryColor,
+              color: chipColor,
             ),
           ),
         ],
@@ -490,7 +565,7 @@ class HomeTab extends StatelessWidget {
           style: Theme.of(context).textTheme.titleLarge?.copyWith(
             fontWeight: FontWeight.bold,
             color: color,
-          ),
+                ),
         ),
         Text(
           label,

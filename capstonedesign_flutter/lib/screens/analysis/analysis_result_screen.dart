@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../../providers/vad_provider.dart';
 import '../../providers/cbt_provider.dart';
 import '../../theme/bemore_theme.dart';
-import '../../services/mock_analysis_service.dart';
+import '../../services/emotion_api_services.dart';
 import '../../models/emotion_data_point.dart';
 import '../home/home_screen.dart';
 import 'dart:convert';
@@ -23,6 +23,7 @@ class AnalysisResultScreen extends StatefulWidget {
 class _AnalysisResultScreenState extends State<AnalysisResultScreen> {
   Map<String, dynamic>? _analysisResult;
   bool _isLoading = true;
+  final EmotionAPIService _apiService = EmotionAPIService();
 
   @override
   void initState() {
@@ -30,15 +31,227 @@ class _AnalysisResultScreenState extends State<AnalysisResultScreen> {
     _performAnalysis();
   }
 
-  void _performAnalysis() {
-    // Mock 분석 서비스를 사용하여 즉시 분석 수행
-    final result = MockAnalysisService.analyzeSessionData(widget.sessionData);
-    setState(() {
-      _analysisResult = result;
-      _isLoading = false;
-    });
+  void _performAnalysis() async {
+    try {
+      // 실제 API 서비스를 사용하여 분석 수행
+      final result = await _performRealAnalysis();
+      setState(() {
+        _analysisResult = result;
+        _isLoading = false;
+      });
+      
+      print('📊 분석 완료: ${jsonEncode(result)}');
+    } catch (e) {
+      print('❌ 분석 실패: $e');
+      // 실패 시 Mock 데이터 사용
+      final mockResult = _generateMockResult();
+      setState(() {
+        _analysisResult = mockResult;
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<Map<String, dynamic>> _performRealAnalysis() async {
+    // 세션 데이터에서 다양한 모달리티 데이터 추출
+    String textData = _extractTextFromSession();
+    String? imageData = _extractImageFromSession();
+    String? audioData = _extractAudioFromSession();
     
-    print('📊 분석 완료: ${jsonEncode(result)}');
+    Map<String, dynamic> apiResult;
+    
+    // 멀티모달 분석 수행
+    if (imageData != null && audioData != null) {
+      // 이미지 + 음성 멀티모달 분석
+      apiResult = await _apiService.sendMultimodalAnalysis(imageData, audioData);
+    } else if (imageData != null) {
+      // 이미지만 분석
+      apiResult = await _apiService.sendImageForAnalysis(imageData);
+    } else if (audioData != null) {
+      // 음성만 분석
+      apiResult = await _apiService.sendAudioForAnalysis(audioData);
+    } else {
+      // 텍스트만 분석
+      apiResult = await _apiService.sendTextForAnalysis(textData);
+    }
+    
+    // API 응답을 Flutter 앱 형식으로 변환
+    return _convertApiResponseToAppFormat(apiResult);
+  }
+
+  String _extractTextFromSession() {
+    // 세션 데이터에서 텍스트 정보 추출
+    // 실제 구현에서는 사용자 입력 텍스트나 음성 전사 텍스트 사용
+    return "오늘 하루 감정 분석을 위한 텍스트 데이터";
+  }
+
+  String? _extractImageFromSession() {
+    // 세션 데이터에서 이미지 정보 추출
+    // 실제 구현에서는 캡처된 얼굴 이미지 사용
+    return null; // 현재는 null 반환
+  }
+
+  String? _extractAudioFromSession() {
+    // 세션 데이터에서 오디오 정보 추출
+    // 실제 구현에서는 녹음된 음성 데이터 사용
+    return null; // 현재는 null 반환
+  }
+
+  Map<String, dynamic> _convertApiResponseToAppFormat(Map<String, dynamic> apiResult) {
+    // 서버 API 응답을 Flutter 앱 형식으로 변환
+    final vadScore = apiResult['final_vad'] ?? apiResult['text_vad'] ?? {
+      'valence': 0.5,
+      'arousal': 0.5,
+      'dominance': 0.5
+    };
+    
+    final emotionTag = apiResult['emotion_tag'] ?? 'neutral';
+    
+    return {
+      'analysis': {
+        'timestamp': DateTime.now().toIso8601String(),
+        'sessionDuration': _calculateSessionDuration(widget.sessionData).inSeconds,
+        'dataPoints': widget.sessionData.length,
+        'emotionCategory': _mapEmotionTagToCategory(emotionTag),
+        'emotionIcon': _getEmotionEmoji(emotionTag),
+        'confidence': 0.85, // API에서 제공하는 경우 사용
+      },
+      'vadStats': {
+        'valence': vadScore['valence'] ?? 0.5,
+        'arousal': vadScore['arousal'] ?? 0.5,
+        'dominance': vadScore['dominance'] ?? 0.5,
+        'valenceTrend': 'stable',
+        'arousalTrend': 'stable',
+        'dominanceTrend': 'stable',
+      },
+      'emotionPattern': {
+        'stability': 'stable',
+        'volatility': 'low',
+        'trend': 'neutral',
+        'keyMoments': [],
+      },
+      'cbtFeedback': _generateCBTFeedbackFromAPI(apiResult),
+      'recommendations': _generateRecommendationsFromAPI(apiResult),
+      'charts': _generateChartData(widget.sessionData),
+    };
+  }
+
+  String _mapEmotionTagToCategory(String emotionTag) {
+    final mapping = {
+      'happy': 'joy',
+      'sad': 'sadness',
+      'angry': 'anger',
+      'fear': 'fear',
+      'surprise': 'surprise',
+      'disgust': 'disgust',
+      'neutral': 'neutral',
+      'anxious': 'anxiety',
+      'calm': 'calm',
+      'excited': 'excitement',
+    };
+    return mapping[emotionTag] ?? 'neutral';
+  }
+
+  String _getEmotionEmoji(String emotionTag) {
+    final iconMapping = {
+      'happy': '😄',
+      'sad': '😢',
+      'angry': '😠',
+      'fear': '😨',
+      'surprise': '😲',
+      'disgust': '🤢',
+      'neutral': '😐',
+      'anxious': '😰',
+      'calm': '😌',
+      'excited': '😃',
+    };
+    return iconMapping[emotionTag] ?? '😐';
+  }
+
+  Map<String, dynamic> _generateCBTFeedbackFromAPI(Map<String, dynamic> apiResult) {
+    final cbtStrategy = apiResult['cbt_strategy'] ?? {};
+    final gptResponse = apiResult['gpt_response'] ?? '';
+    
+    return {
+      'mainAdvice': cbtStrategy['name'] ?? '감정 관리 전략',
+      'explanation': gptResponse.isNotEmpty ? gptResponse : '현재 감정 상태를 바탕으로 한 맞춤형 조언입니다.',
+      'techniques': cbtStrategy['techniques'] ?? ['감정 인식하기', '호흡 조절하기'],
+      'dailyPractice': cbtStrategy['exercises'] ?? ['감정 일기 작성', '명상 연습'],
+      'emergencyTips': ['깊은 호흡하기', '5-4-3-2-1 감각 인식하기', '긍정적 자기 대화하기'],
+    };
+  }
+
+  List<Map<String, dynamic>> _generateRecommendationsFromAPI(Map<String, dynamic> apiResult) {
+    final cbtStrategy = apiResult['cbt_strategy'] ?? {};
+    final exercises = cbtStrategy['exercises'] ?? [];
+    
+    return exercises.map<Map<String, dynamic>>((exercise) => {
+      'title': exercise,
+      'description': '이 활동을 통해 감정 관리 능력을 향상시킬 수 있습니다.',
+      'icon': '🧠',
+      'difficulty': 'easy',
+    }).toList();
+  }
+
+  Duration _calculateSessionDuration(List<EmotionDataPoint> data) {
+    if (data.isEmpty) return Duration.zero;
+    return data.last.timestamp.difference(data.first.timestamp);
+  }
+
+  Map<String, dynamic> _generateChartData(List<EmotionDataPoint> data) {
+    // 차트 데이터 생성 로직
+    return {
+      'vadChart': data.map((point) => {
+        'timestamp': point.timestamp.millisecondsSinceEpoch,
+        'valence': point.valence,
+        'arousal': point.arousal,
+        'dominance': point.dominance,
+      }).toList(),
+    };
+  }
+
+  Map<String, dynamic> _generateMockResult() {
+    // Mock 데이터 생성 (API 실패 시 사용)
+    return {
+      'analysis': {
+        'timestamp': DateTime.now().toIso8601String(),
+        'sessionDuration': _calculateSessionDuration(widget.sessionData).inSeconds,
+        'dataPoints': widget.sessionData.length,
+        'emotionCategory': 'neutral',
+        'emotionIcon': '😐',
+        'confidence': 0.75,
+      },
+      'vadStats': {
+        'valence': 0.5,
+        'arousal': 0.5,
+        'dominance': 0.5,
+        'valenceTrend': 'stable',
+        'arousalTrend': 'stable',
+        'dominanceTrend': 'stable',
+      },
+      'emotionPattern': {
+        'stability': 'stable',
+        'volatility': 'low',
+        'trend': 'neutral',
+        'keyMoments': [],
+      },
+      'cbtFeedback': {
+        'mainAdvice': '현재 안정적인 감정 상태입니다.',
+        'explanation': '감정이 안정적으로 유지되고 있습니다.',
+        'techniques': ['감정 인식하기', '호흡 조절하기'],
+        'dailyPractice': ['감정 일기 작성', '명상 연습'],
+        'emergencyTips': ['깊은 호흡하기', '5-4-3-2-1 감각 인식하기'],
+      },
+      'recommendations': [
+        {
+          'title': '감정 일기 작성',
+          'description': '매일 감정을 기록하여 패턴을 파악해보세요.',
+          'icon': '📝',
+          'difficulty': 'easy',
+        }
+      ],
+      'charts': _generateChartData(widget.sessionData),
+    };
   }
 
   @override
@@ -107,7 +320,7 @@ class _AnalysisResultScreenState extends State<AnalysisResultScreen> {
     
     final analysis = _analysisResult!['analysis'] as Map<String, dynamic>;
     final emotionCategory = analysis['emotionCategory'] as String;
-    final emotionIconCode = analysis['emotionIcon'] as int;
+    final emotionIcon = analysis['emotionIcon'] as String? ?? '😐';
     final confidence = analysis['confidence'] as double;
     final dataPoints = analysis['dataPoints'] as int;
     
@@ -126,10 +339,14 @@ class _AnalysisResultScreenState extends State<AnalysisResultScreen> {
                 color: emotionColor.withOpacity(0.1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(
-                IconData(emotionIconCode, fontFamily: 'MaterialIcons'),
-                size: 40,
-                color: emotionColor,
+              child: Center(
+                child: Text(
+                  emotionIcon,
+                  style: TextStyle(
+                    fontSize: 40,
+                    color: emotionColor,
+                  ),
+                ),
               ),
             ),
             
@@ -556,7 +773,11 @@ class _AnalysisResultScreenState extends State<AnalysisResultScreen> {
   Widget _buildRecommendations(BuildContext context) {
     if (_analysisResult == null) return const SizedBox.shrink();
     
-    final recommendations = _analysisResult!['recommendations'] as List<dynamic>;
+    final recommendations = _analysisResult!['recommendations'] as List<dynamic>?;
+    
+    if (recommendations == null || recommendations.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
     return Card(
       child: Padding(
@@ -573,7 +794,7 @@ class _AnalysisResultScreenState extends State<AnalysisResultScreen> {
             
             const SizedBox(height: 16),
             
-            ...recommendations.map((rec) => _buildRecommendationItem(context, rec)),
+            ...recommendations.map((rec) => _buildRecommendationItem(context, rec as Map<String, dynamic>)),
           ],
         ),
       ),
@@ -581,10 +802,10 @@ class _AnalysisResultScreenState extends State<AnalysisResultScreen> {
   }
 
   Widget _buildRecommendationItem(BuildContext context, Map<String, dynamic> recommendation) {
-    final title = recommendation['title'] as String;
-    final description = recommendation['description'] as String;
-    final priority = recommendation['priority'] as String;
-    final icon = recommendation['icon'] as String;
+    final title = recommendation['title'] as String? ?? '제목 없음';
+    final description = recommendation['description'] as String? ?? '설명 없음';
+    final priority = recommendation['priority'] as String? ?? 'low';
+    final icon = recommendation['icon'] as String? ?? '💡';
 
     Color priorityColor;
     switch (priority) {

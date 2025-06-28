@@ -14,11 +14,9 @@ import 'dart:convert';
 import '../../models/emotion_data_point.dart';
 import 'package:image/image.dart' as img;
 import '../../services/emotion_api_services.dart';
-import 'package:record/record.dart';
-import 'package:record_platform_interface/record_platform_interface.dart';
+import '../../services/audio_manager.dart'; // AudioManager 추가
 import 'dart:typed_data';
 import 'dart:io';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'dart:math';
 
 
@@ -37,7 +35,7 @@ class SessionScreen extends StatefulWidget {
   State<SessionScreen> createState() => _SessionScreenState();
 }
 
-class _SessionScreenState extends State<SessionScreen> {
+class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserver {
   ConversationState _conversationState = ConversationState.preparing;
   String _conversationTopic = '';
   final TextEditingController _topicController = TextEditingController();
@@ -54,13 +52,8 @@ class _SessionScreenState extends State<SessionScreen> {
   bool _hasMicrophonePermission = false;
   String _cameraError = '';
 
-  // 오디오 녹음 관련
-  final Record _audioRecorder = Record();
-  bool _isRecording = false;
-  String? _audioPath;
-  
-  // STT 관련
-  late stt.SpeechToText _speech;
+  // 오디오 관련
+  final AudioManager _audioManager = AudioManager();
   bool _isListening = false;
   String _recognizedText = '';
   String _lastSentText = ''; // 마지막으로 전송된 텍스트 (중복 방지)
@@ -85,6 +78,17 @@ class _SessionScreenState extends State<SessionScreen> {
   // 상태 변수들
   bool _isLoading = false;
 
+  // 권한 안내 다이얼로그 중복 방지 플래그
+  bool _cameraSettingsDialogShown = false;
+  bool _micSettingsDialogShown = false;
+  bool _isRequestingPermissions = false; // 권한 요청 중 플래그 추가
+  bool _hasCheckedPermissions = false; // 초기 권한 확인 완료 플래그 추가
+
+  // STT 재시작 관련 플래그들
+  bool _isRestarting = false;
+  int _consecutiveEmptyResults = 0;
+  DateTime? _lastMeaningfulText;
+
   @override
   void initState() {
     super.initState();
@@ -93,10 +97,12 @@ class _SessionScreenState extends State<SessionScreen> {
     // API 서비스 초기화
     _apiService = EmotionAPIService();
     
-    // STT 초기화
-    _speech = stt.SpeechToText();
+    // AudioManager 초기화
+    _initializeAudioManager();
     
     _initializeDeviceInfo();
+    
+    WidgetsBinding.instance.addObserver(this); // 라이프사이클 옵저버 등록
     
     // 앱이 완전히 로드된 후 권한 확인
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -113,6 +119,7 @@ class _SessionScreenState extends State<SessionScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this); // 옵저버 해제
     _topicController.dispose();
     _noteController.dispose();
     
@@ -125,10 +132,77 @@ class _SessionScreenState extends State<SessionScreen> {
     }
     _cameraController?.dispose();
     
-    // 오디오 녹음 정리
-    _audioRecorder.dispose();
+    // AudioManager 정리
+    _audioManager.dispose();
     
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _hasCheckedPermissions) {
+      print('🔄 앱이 포그라운드로 복귀, 권한 상태만 확인');
+      _checkPermissionStatusOnly(); // 권한 요청 없이 상태만 확인
+    }
+  }
+
+  // 권한 상태만 확인 (요청 없음)
+  Future<void> _checkPermissionStatusOnly() async {
+    try {
+      final cameraStatus = await Permission.camera.status;
+      final micStatus = await Permission.microphone.status;
+      
+      if (mounted) {
+        setState(() {
+          _hasCameraPermission = cameraStatus.isGranted;
+          _hasMicrophonePermission = micStatus.isGranted;
+        });
+      }
+    } catch (e) {
+      print('❌ 권한 상태 확인 중 오류: $e');
+    }
+  }
+
+  Future<void> _checkPermissions() async {
+    if (_isRequestingPermissions || _hasCheckedPermissions) {
+      print('⚠️ 권한 확인 중이거나 이미 확인됨');
+      return;
+    }
+    
+    _isRequestingPermissions = true;
+    
+    try {
+      // 카메라 권한 먼저 확인
+      await _checkCameraPermission();
+      
+      // 잠시 대기 후 마이크 권한 확인
+      await Future.delayed(const Duration(seconds: 1));
+      
+      await _checkMicPermission();
+      
+      _hasCheckedPermissions = true;
+      
+      // 시뮬레이터가 아니고 카메라 권한이 있을 때만 카메라 초기화
+      if (!_isSimulator && _hasCameraPermission) {
+        await _initializeCamera();
+      } else if (_isSimulator) {
+        if (mounted) {
+          setState(() {
+            _isCameraInitialized = true;
+            _conversationState = ConversationState.ready;
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _isCameraInitialized = true;
+            _conversationState = ConversationState.ready;
+          });
+        }
+      }
+    } finally {
+      _isRequestingPermissions = false;
+    }
   }
 
   // 디바이스 정보 초기화 (시뮬레이터 감지)
@@ -152,37 +226,6 @@ class _SessionScreenState extends State<SessionScreen> {
     }
   }
 
-  Future<void> _checkPermissions() async {
-    // 권한 상태 확인
-    await _checkCameraPermission();
-    
-    // 권한 요청 간격을 늘려서 iOS에서 더 안정적으로 처리
-    await Future.delayed(const Duration(seconds: 2));
-    
-    await _checkMicPermission();
-
-    // 시뮬레이터가 아니고 카메라 권한이 있을 때만 카메라 초기화
-    if (!_isSimulator && _hasCameraPermission) {
-      await _initializeCamera();
-    } else if (_isSimulator) {
-      // 시뮬레이터에서는 카메라 초기화 없이 준비 상태로
-      if (mounted) {
-        setState(() {
-          _isCameraInitialized = true;
-          _conversationState = ConversationState.ready;
-        });
-      }
-    } else {
-      // 권한이 없는 경우에도 준비 상태로 (카메라 없이 진행)
-      if (mounted) {
-        setState(() {
-          _isCameraInitialized = true;
-          _conversationState = ConversationState.ready;
-        });
-      }
-    }
-  }
-
   Future<void> _checkCameraPermission() async {
     try {
       print('🔍 카메라 권한 상태 확인');
@@ -191,50 +234,65 @@ class _SessionScreenState extends State<SessionScreen> {
       
       if (status.isGranted) {
         print('✅ 카메라 권한 이미 허용됨');
-        setState(() {
-          _hasCameraPermission = true;
+        if (mounted) setState(() { 
+          _hasCameraPermission = true; 
+          _cameraSettingsDialogShown = false; 
         });
-        await _initializeCamera();
-        return; // 이미 권한이 있으면 종료
+        return;
       }
       
-      // 권한이 없으면 한 번만 요청
+      // 권한이 없으면 사용자에게 설명 후 요청
       if (status.isDenied && mounted) {
-        print('📱 카메라 권한이 거부됨, 사용자에게 설명 제공');
+        print('📱 카메라 권한이 거부됨, 사용자에게 설명 후 권한 요청');
         
-        final shouldRequest = await _showPermissionDialog(
-          '카메라 권한 필요',
-          '실시간 감정 분석을 위해 카메라 접근 권한이 필요합니다.\n\n얼굴 표정을 분석하여 감정 상태를 파악합니다.',
+        // 강화된 권한 요청 다이얼로그
+        final shouldRequest = await _showEnhancedPermissionDialog(
+          '카메라 권한이 필요합니다',
+          '표정 분석을 통해 더 정확한 감정 분석을 제공하기 위해 카메라 접근이 필요합니다.\n\n• 얼굴 표정을 실시간으로 분석\n• 감정 변화를 정확히 추적\n• 개인화된 CBT 피드백 제공\n\n권한을 허용하시면 더 나은 서비스를 제공할 수 있습니다.',
           '권한 허용',
           '나중에',
         );
         
         if (!shouldRequest) {
           print('❌ 사용자가 카메라 권한 요청을 취소함');
-          setState(() {
-            _hasCameraPermission = false;
-            _conversationState = ConversationState.ready;
+          if (mounted) setState(() { 
+            _hasCameraPermission = false; 
           });
           return;
         }
         
-        // 권한 요청
-        await Future.delayed(const Duration(seconds: 2));
-        final result = await Permission.camera.request();
+        // 권한 요청 전에 잠시 대기
+        await Future.delayed(const Duration(seconds: 1));
         
-        setState(() {
-          _hasCameraPermission = result.isGranted;
+        // 직접 권한 요청
+        final result = await Permission.camera.request();
+        print('📱 카메라 권한 요청 결과: $result');
+        
+        if (mounted) setState(() { 
+          _hasCameraPermission = result.isGranted; 
         });
         
-        if (result.isGranted) {
-          await _initializeCamera();
+        // 권한이 여전히 거부된 경우에만 설정 안내
+        if (!result.isGranted && mounted && !_cameraSettingsDialogShown) {
+          print('❌ 카메라 권한이 여전히 거부됨, 설정으로 이동 안내');
+          _cameraSettingsDialogShown = true;
+          await _showEnhancedSettingsDialog('카메라');
         }
+        
+        return;
+      } 
+      
+      // 영구 거부된 경우
+      if (status.isPermanentlyDenied && mounted && !_cameraSettingsDialogShown) {
+        print('🚫 카메라 권한 영구 거부됨, 설정으로 이동 안내');
+        _cameraSettingsDialogShown = true;
+        await _showEnhancedSettingsDialog('카메라');
       }
       
     } catch (e) {
       print('❌ 카메라 권한 확인 중 오류: $e');
-      setState(() {
-        _hasCameraPermission = false;
+      if (mounted) setState(() { 
+        _hasCameraPermission = false; 
       });
     }
   }
@@ -248,9 +306,7 @@ class _SessionScreenState extends State<SessionScreen> {
       
       if (status.isGranted) {
         print('✅ permission_handler 권한 확인됨');
-        setState(() {
-          _hasMicrophonePermission = true;
-        });
+        if (mounted) setState(() { _hasMicrophonePermission = true; _micSettingsDialogShown = false; });
         return;
       } else if (status.isDenied) {
         // 권한이 거부된 경우 사용자에게 설명 제공
@@ -264,9 +320,7 @@ class _SessionScreenState extends State<SessionScreen> {
           
           if (!shouldRequest) {
             print('❌ 사용자가 마이크 권한 요청을 취소함');
-            setState(() {
-              _hasMicrophonePermission = false;
-            });
+            if (mounted) setState(() { _hasMicrophonePermission = false; });
             return;
           }
         }
@@ -274,19 +328,16 @@ class _SessionScreenState extends State<SessionScreen> {
         print('❌ 마이크 권한 거부됨, 요청 시작');
         final result = await Permission.microphone.request();
         print('🎤 마이크 권한 요청 결과: $result');
-        setState(() {
-          _hasMicrophonePermission = result.isGranted;
-        });
+        if (mounted) setState(() { _hasMicrophonePermission = result.isGranted; });
         
-        if (!result.isGranted && mounted) {
-          _showPermissionDeniedDialog('마이크');
+        if (!result.isGranted && mounted && !_micSettingsDialogShown) {
+          _micSettingsDialogShown = true;
+          await _showPermissionDeniedDialog('마이크');
         }
         return;
       } else if (status.isPermanentlyDenied) {
         print('🚫 마이크 권한 영구 거부됨');
-        setState(() {
-          _hasMicrophonePermission = false;
-        });
+        if (mounted) setState(() { _hasMicrophonePermission = false; });
         
         if (mounted) {
           final shouldOpenSettings = await _showPermissionDeniedDialog('마이크');
@@ -297,9 +348,7 @@ class _SessionScreenState extends State<SessionScreen> {
         return;
       } else if (status.isRestricted) {
         print('🚫 마이크 권한 제한됨 (부모 제어 등)');
-        setState(() {
-          _hasMicrophonePermission = false;
-        });
+        if (mounted) setState(() { _hasMicrophonePermission = false; });
         
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -312,30 +361,24 @@ class _SessionScreenState extends State<SessionScreen> {
         return;
       }
       
-      // 백업: record 패키지로 권한 확인
-      final hasRecordPermission = await _audioRecorder.hasPermission();
-      print('🎤 record 패키지 권한 확인: $hasRecordPermission');
+      // 백업: AudioManager로 권한 확인
+      final hasRecordPermission = await _audioManager.initialize();
+      print('🎤 AudioManager 권한 확인: $hasRecordPermission');
       
       if (hasRecordPermission) {
-        print('✅ record 패키지 권한 확인됨');
-        setState(() {
-          _hasMicrophonePermission = true;
-        });
+        print('✅ AudioManager 권한 확인됨');
+        if (mounted) setState(() { _hasMicrophonePermission = true; });
         return;
       }
       
       print('❓ 알 수 없는 마이크 권한 상태');
-      setState(() {
-        _hasMicrophonePermission = false;
-      });
+      if (mounted) setState(() { _hasMicrophonePermission = false; });
       
       print('🎤 최종 마이크 권한 상태: $_hasMicrophonePermission');
       
     } catch (e) {
       print('❌ 마이크 권한 확인 중 오류: $e');
-      setState(() {
-        _hasMicrophonePermission = false;
-      });
+      if (mounted) setState(() { _hasMicrophonePermission = false; });
     }
   }
 
@@ -553,42 +596,15 @@ class _SessionScreenState extends State<SessionScreen> {
   }
 
   void _startConversation() {
-    // 카메라 권한이 없어도 음성 분석으로 진행 가능
-    if (!_isCameraInitialized && !_hasCameraPermission) {
-      print('📱 카메라 없이 음성 분석만으로 진행');
-      setState(() {
-        _conversationState = ConversationState.talking;
-        _conversationStartTime = DateTime.now();
-        // 텍스트 초기화
-        _recognizedText = '';
-        _lastSentText = '';
-      });
-      
-      print('🎤 음성 분석만으로 대화 시작: ${_conversationTopic.isNotEmpty ? _conversationTopic : "자유 대화"}');
-      
-      // 음성 분석만 시작
-      _startVoiceOnlyAnalysis();
+    // 이미 대화 중이면 중복 시작 방지
+    if (_conversationState == ConversationState.talking) {
+      print('⚠️ 이미 대화 중입니다.');
       return;
     }
-
-    if (!_isCameraInitialized || _cameraController == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('카메라가 준비되지 않았습니다. 음성 분석만으로 진행합니다.')),
-      );
-      
-      setState(() {
-        _conversationState = ConversationState.talking;
-        _conversationStartTime = DateTime.now();
-        // 텍스트 초기화
-        _recognizedText = '';
-        _lastSentText = '';
-      });
-      
-      print('🎤 음성 분석만으로 대화 시작: ${_conversationTopic.isNotEmpty ? _conversationTopic : "자유 대화"}');
-      _startVoiceOnlyAnalysis();
-      return;
-    }
-
+    
+    print('🎤 === 대화 시작 ===');
+    print('📱 카메라 권한: $_hasCameraPermission, 마이크 권한: $_hasMicrophonePermission');
+    
     setState(() {
       _conversationState = ConversationState.talking;
       _conversationStartTime = DateTime.now();
@@ -597,313 +613,397 @@ class _SessionScreenState extends State<SessionScreen> {
       _lastSentText = '';
     });
     
-    print('🎤 멀티모달 대화 시작: ${_conversationTopic.isNotEmpty ? _conversationTopic : "자유 대화"}');
-    
-    // 카메라 스트림 시작
-    _startImageAnalysis();
-    
-    // 음성 분석 시작
-    _startVoiceOnlyAnalysis();
+    // STT 중지 상태 확인 후 시작
+    if (_isListening) {
+      print('⚠️ STT가 이미 실행 중입니다. 중지 후 재시작합니다.');
+      _audioManager.stopSTT().then((_) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          _startVoiceAnalysis();
+        });
+      });
+    } else {
+      // 카메라와 음성 분석 시작
+      if (_isCameraInitialized && _cameraController != null && _hasCameraPermission) {
+        print('🎤 멀티모달 대화 시작: ${_conversationTopic.isNotEmpty ? _conversationTopic : "자유 대화"}');
+        _startImageAnalysis();
+        _startVoiceAnalysis();
+      } else {
+        print('🎤 음성 분석만으로 대화 시작: ${_conversationTopic.isNotEmpty ? _conversationTopic : "자유 대화"}');
+        _startVoiceAnalysis();
+      }
+    }
   }
 
-  // 음성 분석만으로 진행하는 메서드
-  void _startVoiceOnlyAnalysis() {
-    print('🎤 === 음성 분석만으로 진행 ===');
+  // 음성 분석 시작 (AudioManager 사용)
+  Future<void> _startVoiceAnalysis() async {
+    if (!mounted) return;
     
-    // STT 기반 음성 인식 시작
-    _tryAudioRecordingSeparately();
+    print('🎤 === AudioManager 음성 분석 시작 ===');
+    
+    try {
+      // 새로운 STT 세션 시작 (AudioManager 사용)
+      final success = await _audioManager.startSTTOnly(
+        localeId: 'ko-KR',
+        listenFor: const Duration(seconds: 30),
+        pauseFor: const Duration(seconds: 3),
+      );
+      
+      if (success) {
+        print('🔄 STT 재시작 완료');
+        if (mounted) {
+          setState(() {
+            _isListening = true;
+          });
+        }
+        print('✅ AudioManager STT 시작 성공');
+      } else {
+        print('❌ STT 재시작 실패');
+      }
+      
+    } catch (e) {
+      print('❌ AudioManager 음성 분석 시작 중 오류: $e');
+    }
   }
 
-  void _endConversation() async {
+  void _processRecognizedText(String text) {
+    if (!mounted || _conversationState != ConversationState.talking) return;
+    
+    print('🔍 텍스트 필터링 검사 시작: "$text"');
+    
+    // 의미 없는 텍스트 필터링 (개선된 버전)
+    if (_isMeaninglessText(text)) {
+      print('🚫 의미 없는 텍스트 필터링: $text');
+      _consecutiveEmptyResults++;
+      return;
+    }
+    
+    // 중복 텍스트 방지
+    if (text == _lastSentText) {
+      print('🚫 중복 텍스트 방지: $text');
+      return;
+    }
+    
+    print('✅ 의미 있는 텍스트로 인식: $text');
+    
+    // 의미 있는 텍스트 처리
+    _consecutiveEmptyResults = 0;
+    _lastMeaningfulText = DateTime.now();
+    
     setState(() {
-      _conversationState = ConversationState.ending;
-      _conversationEndTime = DateTime.now();
+      _recognizedText = text;
     });
     
     // 디바운스 타이머 정리
     _textDebounceTimer?.cancel();
+    
+    // 1초 후 서버로 전송 (중복 방지)
+    _textDebounceTimer = Timer(const Duration(seconds: 1), () {
+      if (mounted && _conversationState == ConversationState.talking) {
+        _sendTextToServer(text);
+        _lastSentText = text;
+      }
+    });
+  }
+  
+  bool _isMeaninglessText(String text) {
+    // 숫자만 있는 경우
+    if (RegExp(r'^[\d\s\-]+$').hasMatch(text)) {
+      print('🚫 필터링: 숫자만 있는 텍스트');
+      return true;
+    }
+    
+    // 숫자와 한국어가 혼재된 이상한 패턴 (예: "123-456-789 열")
+    if (RegExp(r'\d+.*[가-힣]+.*\d+').hasMatch(text)) {
+      print('🚫 필터링: 숫자와 한국어 혼재 패턴');
+      return true;
+    }
+    
+    // 연속된 숫자 패턴 (전화번호, 주민번호 등)
+    if (RegExp(r'\d{3,}.*\d{3,}.*\d{3,}').hasMatch(text)) {
+      print('🚫 필터링: 연속된 숫자 패턴');
+      return true;
+    }
+    
+    // 테스트 관련 단어들 필터링
+    final testWords = ['마이크', '테스트', 'test', 'microphone', 'mic', 'check', '체크'];
+    final lowerText = text.toLowerCase();
+    if (testWords.any((word) => lowerText.contains(word))) {
+      print('🚫 필터링: 테스트 관련 단어 포함');
+      return true;
+    }
+    
+    // 단일 단어이면서 3글자 미만
+    final words = text.split(' ').where((word) => word.isNotEmpty).toList();
+    if (words.length == 1 && words[0].length < 3) {
+      print('🚫 필터링: 단일 단어 3글자 미만');
+      return true;
+    }
+    
+    // 의미 없는 반복 패턴 (50% 이상 중복)
+    if (words.length > 1) {
+      final uniqueWords = words.toSet();
+      if (uniqueWords.length < words.length * 0.5) {
+        print('🚫 필터링: 의미 없는 반복 패턴');
+        return true;
+      }
+    }
+    
+    // 일반적인 노이즈 단어들 (영어 + 한국어)
+    final noiseWords = [
+      'um', 'uh', 'ah', 'oh', 'hmm', 'well', 'like', 'you know', 'i mean',
+      '음', '어', '아', '오', '흠', '그', '저', '뭐', '이', '그게', '뭐냐',
+      '하나', '둘', '셋', '넷', '다섯', '여섯', '일곱', '여덟', '아홉', '열',
+      'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'
+    ];
+    
+    final lowerWords = words.map((word) => word.toLowerCase()).toList();
+    if (lowerWords.every((word) => noiseWords.contains(word))) {
+      print('🚫 필터링: 노이즈 단어만 포함');
+      return true;
+    }
+    
+    // 50% 이상이 노이즈 단어인 경우
+    final noiseCount = lowerWords.where((word) => noiseWords.contains(word)).length;
+    if (noiseCount >= lowerWords.length * 0.5) {
+      print('🚫 필터링: 50% 이상 노이즈 단어');
+      return true;
+    }
+    
+    return false;
+  }
+
+  // STT 에러 처리
+  void _handleSTTError(String errorMsg) {
+    print('🔄 STT 에러로 인한 재시작: $errorMsg');
+    
+    // error_no_match는 정상적인 상황이므로 재시작하지 않음
+    if (errorMsg.contains('no_match')) {
+      print('ℹ️ 음성 인식 없음 (정상적인 상황)');
+      _consecutiveEmptyResults++;
+      return;
+    }
+    
+    // 네트워크나 오디오 관련 에러만 재시작
+    if (errorMsg.contains('network') || 
+        errorMsg.contains('audio') ||
+        errorMsg.contains('timeout') ||
+        errorMsg.contains('permission')) {
+      _scheduleSTTRestart();
+    }
+  }
+
+  // STT 완료 처리
+  void _handleSTTCompletion() {
+    print('🔄 STT 세션 완료, 재시작 고려 중...');
+    
+    // 대화가 끝났거나 앱이 종료 중이면 재시작하지 않음
+    if (_conversationState != ConversationState.talking || !mounted) {
+      print('⏸️ 대화 종료 중이므로 재시작하지 않음');
+      return;
+    }
+    
+    // 연속으로 빈 결과가 나온 경우에만 재시작 (5회 이상)
+    if (_consecutiveEmptyResults >= 5) {
+      print('🔄 연속 빈 결과로 인한 재시작 (${_consecutiveEmptyResults}회)');
+      _scheduleSTTRestart();
+      return;
+    }
+    
+    // 마지막 의미 있는 텍스트로부터 60초가 지난 경우 재시작
+    if (_lastMeaningfulText != null) {
+      final timeSinceLastText = DateTime.now().difference(_lastMeaningfulText!);
+      if (timeSinceLastText.inSeconds > 60) {
+        print('🔄 오랫동안 텍스트 없음으로 인한 재시작 (${timeSinceLastText.inSeconds}초)');
+        _scheduleSTTRestart();
+        return;
+      }
+    }
+    
+    // 그 외의 경우는 자동 재시작하지 않음
+    print('⏸️ STT 세션 완료, 자동 재시작하지 않음');
+  }
+
+  // STT 재시작 스케줄링
+  void _scheduleSTTRestart() {
+    if (_isRestarting) {
+      print('⚠️ 이미 재시작 중입니다');
+      return;
+    }
+    
+    _isRestarting = true;
+    
+    // 2초 후 재시작
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted && _conversationState == ConversationState.talking) {
+        _restartSTT();
+      } else {
+        _isRestarting = false;
+      }
+    });
+  }
+
+  // STT 재시작 메서드 (AudioManager 사용)
+  Future<void> _restartSTT() async {
+    if (!mounted || _conversationState != ConversationState.talking || _isRestarting) {
+      print('⚠️ STT 재시작 조건 불충족');
+      _isRestarting = false;
+      return;
+    }
+    
+    try {
+      print('🔄 STT 재시작 시작...');
+      
+      // 기존 STT 중지
+      await _audioManager.stopSTT();
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      // 상태 재확인
+      if (!mounted || _conversationState != ConversationState.talking) {
+        print('⚠️ STT 재시작 중 상태 변경됨');
+        _isRestarting = false;
+        return;
+      }
+      
+      // 텍스트 초기화
+      setState(() {
+        _recognizedText = '';
+        _lastSentText = '';
+      });
+      
+      // 새로운 STT 세션 시작 (AudioManager 사용)
+      final success = await _audioManager.startSTTOnly(
+        localeId: 'ko-KR',
+        listenFor: const Duration(seconds: 30),
+        pauseFor: const Duration(seconds: 3),
+      );
+      
+      if (success) {
+        print('🔄 STT 재시작 완료');
+      } else {
+        print('❌ STT 재시작 실패');
+      }
+      
+      print('🔄 STT 재시작 완료');
+      _isRestarting = false;
+      
+    } catch (e) {
+      print('❌ STT 재시작 실패: $e');
+      _isRestarting = false;
+    }
+  }
+
+  void _endConversation() {
+    if (_conversationState != ConversationState.talking) {
+      print('⚠️ 대화 중이 아닙니다.');
+      return;
+    }
+    
+    print('🔚 === 대화 종료 시작 ===');
+    
+    setState(() {
+      _conversationState = ConversationState.ending;
+    });
+    
+    // AudioManager 중지
+    _audioManager.stopAll();
     
     // 카메라 스트림 중지
     if (_cameraController != null && _cameraController!.value.isStreamingImages) {
       _cameraController?.stopImageStream();
     }
     
-    // 오디오 녹음 중지
-    await _stopAudioRecording();
+    // 텍스트 디바운스 타이머 정리
+    _textDebounceTimer?.cancel();
     
-    // STT 중지 및 마지막 텍스트 처리
-    await _stopSTTListening();
+    _conversationEndTime = DateTime.now();
     
     print('🔚 대화 종료, 분석 데이터 (${_sessionData.length}개) 전송 준비');
     
-    // 실제 앱에서는 여기서 서버로 _sessionData 를 json으로 변환하여 전송합니다.
-    final payload = jsonEncode(_sessionData.map((d) => d.toJson()).toList());
-    print('📦 전송될 최종 데이터: $payload');
-    
-    // 분석 화면으로 이동
-    if (mounted) {
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (context) => AnalysisPendingScreen(sessionData: _sessionData)),
-        (route) => false, // 현재까지의 모든 라우트를 스택에서 제거
-      );
-    }
+    // 세션 데이터 전송
+    _sendSessionData();
   }
 
-  void _startRealTimeAnalysis() {
-    if (_cameraController == null) return;
+  void _startImageAnalysis() {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
     
-    // 카메라 분석만 먼저 시작
-    _startImageAnalysis();
-    
-    // 음성 녹음은 별도로 시도 (실패해도 카메라 분석은 계속)
-    _tryAudioRecordingSeparately();
-  }
-
-  Future<void> _tryAudioRecordingSeparately() async {
-    print('🎤 === 독립적 음성 녹음 시도 ===');
-    
-    // 음성 녹음이 실패해도 카메라 분석은 계속 진행
-    try {
-      await _startAudioRecordingWithFallback();
-    } catch (e) {
-      print('❌ 음성 녹음 실패 (카메라 분석은 계속): $e');
-      // 음성 녹음 실패 시 사용자에게 상세한 알림
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '음성 녹음이 불가능합니다',
-                  style: TextStyle(fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  '• 얼굴 분석만으로 진행됩니다\n• 대화 후 텍스트 입력으로 보완 가능',
-                  style: TextStyle(fontSize: 12),
-                ),
-              ],
-            ),
-            duration: const Duration(seconds: 5),
-            backgroundColor: Colors.orange.shade700,
-            behavior: SnackBarBehavior.floating,
-            margin: const EdgeInsets.all(16),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          ),
-        );
-      }
-    }
-  }
-
-  Future<void> _startAudioRecordingWithFallback() async {
-    print('🎤 === 음성 녹음 시작 (대안적 접근법) ===');
-    
-    // iOS에서 오디오 세션 설정 개선 (RecordConfig 제거)
-    if (Platform.isIOS) {
-      try {
-        print('✅ iOS 오디오 세션 설정 완료');
-      } catch (e) {
-        print('⚠️ iOS 오디오 세션 설정 실패: $e');
-      }
+    // 이미 스트림이 실행 중이면 중지
+    if (_cameraController!.value.isStreamingImages) {
+      print('📷 기존 카메라 스트림 중지...');
+      _cameraController!.stopImageStream();
     }
     
-    // 1차 시도: STT 기반 음성 인식
-    try {
-      print('🔄 STT 기반 음성 인식 시도...');
-      await _startSTTListening();
-      if (_isListening) {
-        print('✅ STT 음성 인식 시작 성공');
-        return;
-      }
-    } catch (e) {
-      print('❌ STT 음성 인식 실패: $e');
-    }
-    
-    // 2차 시도: 카메라 스트림 일시 중지 후 녹음
-    try {
-      print('🔄 음성 녹음 2차 시도 (카메라 스트림 일시 중지)...');
-      
-      // 카메라 스트림이 실행 중이면 일시 중지
-      if (_cameraController != null && _cameraController!.value.isStreamingImages) {
-        print('📷 카메라 스트림 일시 중지...');
-        await _cameraController!.stopImageStream();
-        await Future.delayed(const Duration(milliseconds: 500)); // 안정화 대기
-      }
-      
-      await _startAudioRecording();
-      if (_isRecording) {
-        print('✅ 음성 녹음 2차 시도 성공');
-        // 카메라 스트림 재시작
-        if (_cameraController != null && _cameraController!.value.isInitialized) {
-          print('📷 카메라 스트림 재시작...');
-          _startImageStream();
-        }
-        return;
-      }
-    } catch (e) {
-      print('❌ 음성 녹음 2차 시도 실패: $e');
-      // 카메라 스트림 재시작
+    // 잠시 대기 후 새 스트림 시작
+    Future.delayed(const Duration(milliseconds: 500), () {
       if (_cameraController != null && _cameraController!.value.isInitialized) {
-        print('📷 카메라 스트림 재시작...');
+        print('📷 새 카메라 스트림 시작...');
         _startImageStream();
       }
-    }
-    
-    // 3차 시도: 더 낮은 설정으로 시도 (카메라 스트림 중지 없이)
-    try {
-      print('🔄 음성 녹음 3차 시도 (낮은 설정)...');
-      final tempDir = await Directory.systemTemp.createTemp('audio_recording');
-      final audioPath = '${tempDir.path}/temp_audio_${DateTime.now().millisecondsSinceEpoch}.wav';
-      
-      await _audioRecorder.start(
-        path: audioPath,
-        encoder: AudioEncoder.wav,
-        bitRate: 8000, // 매우 낮은 비트레이트
-        samplingRate: 8000, // 매우 낮은 샘플링 레이트
-        numChannels: 1,
-      );
-      
-      _isRecording = true;
-      _audioPath = audioPath;
-      print('✅ 음성 녹음 3차 시도 성공 (낮은 설정)');
-      return;
-      
-    } catch (e) {
-      print('❌ 음성 녹음 3차 시도 실패: $e');
-    }
-    
-    // 4차 시도: 가장 기본적인 설정
-    try {
-      print('🔄 음성 녹음 4차 시도 (기본 설정)...');
-      final tempDir = await Directory.systemTemp.createTemp('audio_recording');
-      final audioPath = '${tempDir.path}/temp_audio_${DateTime.now().millisecondsSinceEpoch}.wav';
-      
-      await _audioRecorder.start(path: audioPath);
-      
-      _isRecording = true;
-      _audioPath = audioPath;
-      print('✅ 음성 녹음 4차 시도 성공 (기본 설정)');
-      
-    } catch (e) {
-      print('❌ 음성 녹음 4차 시도도 실패: $e');
-      print('⚠️ 음성 녹음이 불가능합니다. 얼굴 분석만으로 진행합니다.');
-      throw Exception('음성 녹음 실패: $e');
-    }
+    });
   }
 
-  Future<void> _startAudioRecording() async {
-    print('🎤 === 음성 녹음 시작 시도 ===');
-    print('🎤 마이크 권한 상태: $_hasMicrophonePermission');
-    print('🎤 시뮬레이터 여부: $_isSimulator');
+  void _startImageStream() {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
     
-    // 시뮬레이터에서는 음성 녹음 제한
-    if (_isSimulator) {
-      print('📱 시뮬레이터에서는 음성 녹음이 제한됩니다.');
-      throw Exception('시뮬레이터에서는 음성 녹음이 불가능합니다.');
-    }
-    
-    // 실제 디바이스에서 권한이 없으면 권한 요청
-    if (!_hasMicrophonePermission) {
-      print('🎤 마이크 권한이 없어 음성 녹음을 시작할 수 없습니다.');
-      throw Exception('마이크 권한이 없습니다.');
-    }
-
     try {
-      print('🎤 음성 녹음 시작...');
-      
-      // iOS에서 더 안정적인 권한 재확인
-      if (Platform.isIOS) {
-        final status = await Permission.microphone.status;
-        if (!status.isGranted) {
-          print('❌ iOS 마이크 권한이 없습니다.');
-          throw Exception('iOS 마이크 권한이 없습니다.');
+      _cameraController!.startImageStream((CameraImage cameraImage) async {
+        // 1초에 한 번씩만 이미지를 처리하도록 제어
+        final now = DateTime.now();
+        if (now.difference(_lastAnalyzedTime) < const Duration(seconds: 1)) {
+          return;
         }
-      }
-      
-      // record 패키지 권한 재확인
-      print('🎤 record 패키지 권한 확인 중...');
-      final hasRecordPermission = await _audioRecorder.hasPermission();
-      print('🎤 record 패키지 권한 결과: $hasRecordPermission');
-      
-      if (!hasRecordPermission) {
-        print('❌ 음성 녹음 권한이 없습니다.');
-        throw Exception('음성 녹음 권한이 없습니다.');
-      }
-      
-      print('🎤 현재 녹음 상태: $_isRecording');
-      if (_isRecording) {
-        print('🎤 이미 녹음 중입니다. 중지 후 다시 시작합니다.');
-        await _stopAudioRecording();
-      }
-      
-      // iOS에서 더 안정적인 경로 사용
-      final tempDir = await Directory.systemTemp.createTemp('audio_recording');
-      final audioPath = '${tempDir.path}/temp_audio_${DateTime.now().millisecondsSinceEpoch}.wav';
-      
-      print('🎤 녹음 시작 명령 실행... (경로: $audioPath)');
-      
-      // iOS에서 더 안정적인 설정으로 녹음 시작 (카메라와 동시 사용 고려)
-      await _audioRecorder.start(
-        path: audioPath,
-        encoder: AudioEncoder.wav,
-        bitRate: 64000, // 더 낮은 비트레이트로 변경
-        samplingRate: 22050, // 더 낮은 샘플링 레이트로 변경
-        numChannels: 1, // 모노 채널
-      );
-      
-      _isRecording = true;
-      _audioPath = audioPath;
-      print('✅ 음성 녹음이 시작되었습니다.');
-      
-    } catch (e) {
-      print('❌ 음성 녹음 시작 실패: $e');
-      throw e; // 상위로 예외 전파
-    }
-  }
+        _lastAnalyzedTime = now;
 
-  Future<void> _stopAudioRecording() async {
-    try {
-      if (_isRecording) {
-        final path = await _audioRecorder.stop();
-        _isRecording = false;
-        print('🔇 음성 녹음 중지');
-        if (path != null) {
-          final file = File(path);
-          final bytes = await file.readAsBytes();
-          await _sendAudioToServer(bytes);
+        try {
+          // 분석 시작 상태 업데이트
+          if (mounted) {
+            setState(() {
+              _isAnalyzing = true;
+            });
+          }
+
+          // 1. CameraImage를 일반 이미지(JPEG)로 변환
+          final image = _convertCameraImage(cameraImage);
+          if (image == null) return;
+
+          // 2. 이미지를 Base64 문자열로 인코딩 (품질 조정으로 크기 최적화)
+          final base64Image = base64Encode(img.encodeJpg(image, quality: 85));
+
+          // 3. API 서비스로 전송하여 분석 요청
+          print('🚀 실시간 이미지 분석 요청...');
+          final result = await _apiService.sendImageForAnalysis(base64Image);
+          print('✅ 실시간 분석 완료: ${result['emotion_tag']} (${result['face_emotion']})');
+
+          // 4. 응답 결과를 EmotionDataPoint 모델로 변환
+          final newDataPoint = EmotionDataPoint(
+            timestamp: DateTime.now(),
+            valence: result['final_vad']['valence']?.toDouble() ?? 0.0,
+            arousal: result['final_vad']['arousal']?.toDouble() ?? 0.0,
+            dominance: result['final_vad']['dominance']?.toDouble() ?? 0.0,
+          );
+          
+          _sessionData.add(newDataPoint);
+          print('📊 실시간 VAD 데이터: V=${newDataPoint.valence.toStringAsFixed(2)}, A=${newDataPoint.arousal.toStringAsFixed(2)}, D=${newDataPoint.dominance.toStringAsFixed(2)}');
+
+          // UI 상태 업데이트
+          if (mounted) {
+            setState(() {
+              _isAnalyzing = false;
+              _currentEmotion = result['emotion_tag'] ?? '';
+              _currentFaceEmotion = result['face_emotion'] ?? '';
+            });
+          }
+
+        } catch (e) {
+          print('❌ 실시간 분석 실패: $e');
+          if (mounted) {
+            setState(() {
+              _isAnalyzing = false;
+            });
+          }
         }
-      }
+      });
     } catch (e) {
-      print('❌ 음성 녹음 중지 실패: $e');
-    }
-  }
-
-  Future<void> _sendAudioToServer(Uint8List audioBytes) async {
-    try {
-      final base64Audio = base64Encode(audioBytes);
-      
-      print('🚀 오디오 서버 전송 시작...');
-      final result = await _apiService.sendAudioForAnalysis(base64Audio);
-      print('✅ 오디오 분석 응답: $result');
-      
-      // VAD 데이터 추가
-      if (result.containsKey('audio_vad')) {
-        final vadData = result['audio_vad'];
-        final newDataPoint = EmotionDataPoint(
-          timestamp: DateTime.now(),
-          valence: vadData['valence']?.toDouble() ?? 0.0,
-          arousal: vadData['arousal']?.toDouble() ?? 0.0,
-          dominance: vadData['dominance']?.toDouble() ?? 0.0,
-        );
-        
-        _sessionData.add(newDataPoint);
-        print('📊 오디오 VAD 데이터 수신: ${jsonEncode(newDataPoint.toJson())}');
-      }
-      
-    } catch (e) {
-      print('❌ 오디오 서버 전송 실패: $e');
+      print('❌ 카메라 스트림 시작 실패: $e');
     }
   }
 
@@ -960,44 +1060,290 @@ class _SessionScreenState extends State<SessionScreen> {
     }
   }
 
-  void _addNote() {
-    if (_noteController.text.isNotEmpty) {
+  // STT 음성 인식 중지
+  Future<void> _stopSTTListening() async {
+    if (_isListening) {
       setState(() {
-        _conversationNotes.add(_noteController.text);
-        _noteController.clear();
+        _isListening = false;
       });
+      
+      // 디바운스 타이머 정리
+      _textDebounceTimer?.cancel();
+      
+      _audioManager.stopSTT();
+      print('🔇 STT 음성 인식 중지');
+      
+      // 인식된 텍스트가 있고, 아직 전송하지 않은 텍스트인 경우에만 서버로 전송
+      if (_recognizedText.isNotEmpty && _recognizedText != _lastSentText) {
+        await _sendTextToServer(_recognizedText);
+        _lastSentText = _recognizedText;
+      }
     }
   }
 
-  void _showNotesModal() {
-    showModalBottomSheet(
+  // 인식된 텍스트를 서버로 전송
+  Future<void> _sendTextToServer(String text) async {
+    if (!mounted || _conversationState != ConversationState.talking) return;
+    
+    print('🚀 텍스트 서버 전송 시작: $text');
+    
+    try {
+      // 텍스트 기반 VAD 추정
+      final estimatedVAD = _audioManager.estimateVADFromText(text);
+      print('📊 텍스트 기반 VAD 추정: ${estimatedVAD.toStringAsFixed(2)}');
+      
+      // 서버로 텍스트 분석 요청
+      final result = await _apiService.analyzeTextEmotion(text);
+      
+      if (result != null) {
+        print('✅ 텍스트 분석 성공');
+        
+        // VAD 데이터 생성 (텍스트 기반 추정값 사용)
+        final vadData = {
+          'valence': estimatedVAD,
+          'arousal': estimatedVAD,
+          'dominance': estimatedVAD,
+        };
+        
+        // 세션 데이터에 추가
+        final newDataPoint = EmotionDataPoint.fromVad(
+          timestamp: DateTime.now(),
+          vad: vadData,
+          text: text,
+          emotion: result['text_emotion'] ?? 'neutral',
+          confidence: 0.8, // 텍스트 기반이므로 중간 신뢰도
+        );
+        
+        _sessionData.add(newDataPoint);
+        
+        print('📊 텍스트 VAD 데이터 생성: ${jsonEncode(newDataPoint.toJson())}');
+        
+        // 실시간 분석 결과 업데이트
+        if (mounted) {
+          setState(() {
+            _currentEmotion = result['text_emotion'] ?? 'neutral';
+          });
+        }
+        
+      } else {
+        print('❌ 텍스트 분석 실패');
+      }
+      
+    } catch (e) {
+      print('❌ 텍스트 서버 전송 중 오류: $e');
+    }
+  }
+
+  // 강화된 권한 요청 다이얼로그
+  Future<bool> _showEnhancedPermissionDialog(String title, String message, String confirmText, String cancelText) async {
+    print('📱 강화된 권한 다이얼로그 생성 시작: $title');
+    
+    final result = await showDialog<bool>(
       context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return GestureDetector(
-          onTap: () => Navigator.of(context).pop(),
-          child: Container(
-            color: const Color.fromRGBO(0, 0, 0, 0.001),
-            child: DraggableScrollableSheet(
-              initialChildSize: 0.6,
-              minChildSize: 0.4,
-              maxChildSize: 0.9,
-              builder: (_, controller) {
-                return Material(
-                  color: Colors.white,
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(24),
-                    topRight: Radius.circular(24),
-                  ),
-                  child: _buildNotesContent(controller),
-                );
-              },
-            ),
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        print('📱 강화된 권한 다이얼로그 빌더 실행');
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
           ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6366F1).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.camera_alt,
+                  color: Color(0xFF6366F1),
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                message,
+                style: const TextStyle(
+                  fontSize: 14,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF6366F1).withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: const Color(0xFF6366F1).withOpacity(0.2),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.info_outline,
+                      color: Color(0xFF6366F1),
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '권한 없이도 음성 분석으로 기본 서비스를 이용할 수 있습니다.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                print('📱 사용자가 권한 요청을 취소함');
+                Navigator.of(context).pop(false);
+              },
+              child: Text(
+                cancelText,
+                style: const TextStyle(color: Colors.grey),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                print('📱 사용자가 권한 요청을 허용함');
+                Navigator.of(context).pop(true);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF6366F1),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+              child: Text(confirmText),
+            ),
+          ],
         );
       },
     );
+    
+    print('📱 강화된 권한 다이얼로그 결과: $result');
+    return result ?? false;
+  }
+
+  // 강화된 설정 다이얼로그
+  Future<void> _showEnhancedSettingsDialog(String permissionType) async {
+    final shouldOpenSettings = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.settings,
+                  color: Colors.orange,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                '$permissionType 권한 필요',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '$permissionType 권한이 거부되었습니다.\n\n설정에서 권한을 허용해주세요:',
+                style: const TextStyle(fontSize: 14),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: Colors.blue.withOpacity(0.2),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '설정 방법:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      '1. 설정 앱 열기\n2. BeMore 앱 찾기\n3. 권한 탭 선택\n4. 카메라 권한 허용',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('취소'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.blue,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('설정으로 이동'),
+            ),
+          ],
+        );
+      },
+    ) ?? false;
+    
+    if (shouldOpenSettings) {
+      await openAppSettings();
+    }
   }
 
   @override
@@ -1007,42 +1353,7 @@ class _SessionScreenState extends State<SessionScreen> {
       body: Stack(
         children: [
           // 카메라 프리뷰
-          if (_isCameraInitialized && _cameraController != null && _hasCameraPermission)
-            CameraPreview(_cameraController!),
-          
-          // 카메라가 없을 때 배경
-          if (!_isCameraInitialized || !_hasCameraPermission)
-            Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Color(0xFF1a1a2e), Color(0xFF16213e)],
-                ),
-              ),
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      !_hasCameraPermission ? Icons.camera_alt_outlined : Icons.camera_alt,
-                      size: 80,
-                      color: Colors.white.withOpacity(0.3),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      !_hasCameraPermission 
-                          ? '카메라 권한이 필요합니다'
-                          : '카메라를 초기화하는 중...',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.7),
-                        fontSize: 18,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+          _buildCameraPreview(),
           
           // 권한 상태 표시
           _buildPermissionStatus(),
@@ -1073,12 +1384,6 @@ class _SessionScreenState extends State<SessionScreen> {
                 : _buildStartConversationButton(),
             ),
           ),
-          
-          // 로딩 인디케이터
-          if (_isLoading)
-            const Center(
-              child: CircularProgressIndicator(color: Colors.white),
-            ),
         ],
       ),
     );
@@ -1169,7 +1474,7 @@ class _SessionScreenState extends State<SessionScreen> {
                 ),
                 child: FractionallySizedBox(
                   alignment: Alignment.centerLeft,
-                  widthFactor: _currentSoundLevel.clamp(0.0, 1.0),
+                  widthFactor: (_currentSoundLevel / 100).clamp(0.0, 1.0),
                   child: Container(
                     decoration: BoxDecoration(
                       color: Colors.white,
@@ -1196,7 +1501,6 @@ class _SessionScreenState extends State<SessionScreen> {
                   textAlign: TextAlign.center,
                 ),
               ),
-              const SizedBox(height: 16),
             ],
           ],
         ),
@@ -1204,77 +1508,59 @@ class _SessionScreenState extends State<SessionScreen> {
     );
   }
 
-  Widget _buildAnalysisIndicator() {
-    // 분석 중임을 나타내는 미묘한 인디케이터
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.4),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_isAnalyzing) 
-            const BlinkingRecIndicator()
-          else if (_isListening)
-            Container(
-              width: 8,
-              height: 8,
-              decoration: const BoxDecoration(
-                color: Colors.blue,
-                shape: BoxShape.circle,
-              ),
-            )
-          else
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: _currentEmotion.isNotEmpty ? Colors.green : Colors.grey,
-                shape: BoxShape.circle,
-              ),
-            ),
-          const SizedBox(width: 8),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _isAnalyzing ? '분석 중' : _isListening ? '음성 인식 중' : '실시간 분석',
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: 0.5,
-                  fontSize: 12,
-                ),
-              ),
-              if (_currentEmotion.isNotEmpty && !_isAnalyzing && !_isListening)
-                Text(
-                  '${_currentEmotion} (${_currentFaceEmotion})',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-              if (_isListening)
-                Text(
-                  _recognizedText.isEmpty ? '말씀해주세요...' : '인식 중...',
-                  style: const TextStyle(
-                    color: Colors.blue,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-            ],
-          ),
+  BoxDecoration _bottomGradient() {
+    return BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.bottomCenter,
+        end: Alignment.topCenter,
+        colors: [
+          Colors.black.withOpacity(0.8),
+          Colors.black.withOpacity(0.0),
         ],
       ),
     );
   }
-  
+
+  void _addNote() {
+    if (_noteController.text.isNotEmpty) {
+      setState(() {
+        _conversationNotes.add(_noteController.text);
+        _noteController.clear();
+      });
+    }
+  }
+
+  void _showNotesModal() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return GestureDetector(
+          onTap: () => Navigator.of(context).pop(),
+          child: Container(
+            color: const Color.fromRGBO(0, 0, 0, 0.001),
+            child: DraggableScrollableSheet(
+              initialChildSize: 0.6,
+              minChildSize: 0.4,
+              maxChildSize: 0.9,
+              builder: (_, controller) {
+                return Material(
+                  color: Colors.white,
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(24),
+                    topRight: Radius.circular(24),
+                  ),
+                  child: _buildNotesContent(controller),
+                );
+              },
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildNotesContent(ScrollController scrollController) {
     return StatefulBuilder(
       builder: (BuildContext context, StateSetter setState) {
@@ -1359,15 +1645,73 @@ class _SessionScreenState extends State<SessionScreen> {
       },
     );
   }
-  
-  BoxDecoration _bottomGradient() {
-    return BoxDecoration(
-      gradient: LinearGradient(
-        begin: Alignment.bottomCenter,
-        end: Alignment.topCenter,
-        colors: [
-          Colors.black.withOpacity(0.8),
-          Colors.black.withOpacity(0.0),
+
+  Widget _buildAnalysisIndicator() {
+    // 분석 중임을 나타내는 미묘한 인디케이터
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.4),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_isAnalyzing) 
+            const BlinkingRecIndicator()
+          else if (_isListening)
+            Container(
+              width: 8,
+              height: 8,
+              decoration: const BoxDecoration(
+                color: Colors.blue,
+                shape: BoxShape.circle,
+              ),
+            )
+          else
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: _currentEmotion.isNotEmpty ? Colors.green : Colors.grey,
+                shape: BoxShape.circle,
+              ),
+            ),
+          const SizedBox(width: 8),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _isAnalyzing ? '분석 중' : _isListening ? '음성 인식 중' : '실시간 분석',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 0.5,
+                  fontSize: 12,
+                ),
+              ),
+              if (_currentEmotion.isNotEmpty && !_isAnalyzing && !_isListening)
+                Text(
+                  '${_currentEmotion} (${_currentFaceEmotion})',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              if (_isListening)
+                Text(
+                  _recognizedText.isEmpty ? '말씀해주세요...' : '인식 중...',
+                  style: const TextStyle(
+                    color: Colors.blue,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+            ],
+          ),
         ],
       ),
     );
@@ -1436,325 +1780,6 @@ class _SessionScreenState extends State<SessionScreen> {
     );
   }
 
-  void _startImageAnalysis() {
-    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
-    
-    // 이미 스트림이 실행 중이면 중지
-    if (_cameraController!.value.isStreamingImages) {
-      print('📷 기존 카메라 스트림 중지...');
-      _cameraController!.stopImageStream();
-    }
-    
-    // 잠시 대기 후 새 스트림 시작
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (_cameraController != null && _cameraController!.value.isInitialized) {
-        print('📷 새 카메라 스트림 시작...');
-        _startImageStream();
-      }
-    });
-  }
-
-  void _startImageStream() {
-    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
-    
-    try {
-      _cameraController!.startImageStream((CameraImage cameraImage) async {
-        // 1초에 한 번씩만 이미지를 처리하도록 제어
-        final now = DateTime.now();
-        if (now.difference(_lastAnalyzedTime) < const Duration(seconds: 1)) {
-          return;
-        }
-        _lastAnalyzedTime = now;
-
-        try {
-          // 분석 시작 상태 업데이트
-          if (mounted) {
-            setState(() {
-              _isAnalyzing = true;
-            });
-          }
-
-          // 1. CameraImage를 일반 이미지(JPEG)로 변환
-          final image = _convertCameraImage(cameraImage);
-          if (image == null) return;
-
-          // 2. 이미지를 Base64 문자열로 인코딩 (품질 조정으로 크기 최적화)
-          final base64Image = base64Encode(img.encodeJpg(image, quality: 85));
-
-          // 3. API 서비스로 전송하여 분석 요청
-          print('🚀 실시간 이미지 분석 요청...');
-          final result = await _apiService.sendImageForAnalysis(base64Image);
-          print('✅ 실시간 분석 완료: ${result['emotion_tag']} (${result['face_emotion']})');
-
-          // 4. 응답 결과를 EmotionDataPoint 모델로 변환
-          final newDataPoint = EmotionDataPoint(
-            timestamp: DateTime.now(),
-            valence: result['final_vad']['valence']?.toDouble() ?? 0.0,
-            arousal: result['final_vad']['arousal']?.toDouble() ?? 0.0,
-            dominance: result['final_vad']['dominance']?.toDouble() ?? 0.0,
-          );
-          
-          _sessionData.add(newDataPoint);
-          print('📊 실시간 VAD 데이터: V=${newDataPoint.valence.toStringAsFixed(2)}, A=${newDataPoint.arousal.toStringAsFixed(2)}, D=${newDataPoint.dominance.toStringAsFixed(2)}');
-
-          // UI 상태 업데이트
-          if (mounted) {
-            setState(() {
-              _isAnalyzing = false;
-              _currentEmotion = result['emotion_tag'] ?? '';
-              _currentFaceEmotion = result['face_emotion'] ?? '';
-            });
-          }
-
-        } catch (e) {
-          print('❌ 실시간 분석 실패: $e');
-          if (mounted) {
-            setState(() {
-              _isAnalyzing = false;
-            });
-          }
-        }
-      });
-    } catch (e) {
-      print('❌ 카메라 스트림 시작 실패: $e');
-    }
-  }
-
-  // STT 기반 음성 인식 시작
-  Future<void> _startSTTListening() async {
-    print('🎤 === STT 음성 인식 시작 ===');
-    
-    // 텍스트 초기화
-    setState(() {
-      _recognizedText = '';
-      _lastSentText = '';
-    });
-    
-    bool available = await _speech.initialize(
-      onError: (val) {
-        print("STT Error: ${val.errorMsg}");
-        // 에러 발생 시 자동으로 재시작
-        if (val.errorMsg.contains('no_match') || val.errorMsg.contains('network')) {
-          print('🔄 STT 에러로 인한 재시작 시도...');
-          Future.delayed(const Duration(seconds: 1), () {
-            if (_isListening) {
-              _restartSTTListening();
-            }
-          });
-        }
-      },
-      onStatus: (val) {
-        print("STT Status: $val");
-        // 상태 변화에 따른 처리
-        if (val == 'done' && _isListening) {
-          print('🔄 STT 세션 완료, 재시작...');
-          Future.delayed(const Duration(seconds: 1), () {
-            if (_isListening) {
-              _restartSTTListening();
-            }
-          });
-        }
-      },
-    );
-    print("STT available: $available");
-
-    if (available) {
-      setState(() => _isListening = true);
-      _speech.listen(
-        onResult: (val) {
-          final newText = val.recognizedWords.trim();
-          
-          setState(() {
-            _recognizedText = newText;
-          });
-          
-          // 새로운 텍스트가 있고, 이전에 전송하지 않은 텍스트인 경우에만 처리
-          if (newText.isNotEmpty && newText != _lastSentText) {
-            print('🎤 새로운 텍스트 인식: $newText');
-            
-            // 디바운스 타이머로 중복 전송 방지
-            _textDebounceTimer?.cancel();
-            _textDebounceTimer = Timer(const Duration(milliseconds: 1500), () {
-              if (newText.isNotEmpty && newText != _lastSentText) {
-                _sendTextToServer(newText);
-                _lastSentText = newText;
-              }
-            });
-          }
-        },
-        onSoundLevelChange: (level) {
-          setState(() {
-            _currentSoundLevel = level ?? 0.0;
-          });
-          // 음성 파형 분석 추가 (null 체크)
-          if (level != null) {
-            _analyzeSoundLevel(level);
-          }
-        },
-        localeId: 'ko_KR', // 한국어 설정
-        listenFor: const Duration(seconds: 30),
-        pauseFor: const Duration(seconds: 3), // 일시 정지 시간 단축
-        partialResults: false, // 부분 결과 비활성화로 중복 방지
-        cancelOnError: false,
-        listenMode: stt.ListenMode.dictation, // dictation 모드로 변경 (더 자연스러운 인식)
-        onDevice: false, // 서버 기반 인식 사용
-      );
-    } else {
-      print("STT recognition not available.");
-      throw Exception('STT recognition not available');
-    }
-  }
-
-  // STT 재시작 메서드
-  Future<void> _restartSTTListening() async {
-    if (!_isListening) return;
-    
-    try {
-      // 디바운스 타이머 정리
-      _textDebounceTimer?.cancel();
-      
-      await _speech.stop();
-      await Future.delayed(const Duration(milliseconds: 500));
-      
-      // 텍스트 초기화
-      setState(() {
-        _recognizedText = '';
-        _lastSentText = '';
-      });
-      
-      if (_isListening) {
-        _speech.listen(
-          onResult: (val) {
-            final newText = val.recognizedWords.trim();
-            
-            setState(() {
-              _recognizedText = newText;
-            });
-            
-            // 새로운 텍스트가 있고, 이전에 전송하지 않은 텍스트인 경우에만 처리
-            if (newText.isNotEmpty && newText != _lastSentText) {
-              print('🎤 재시작 후 새로운 텍스트 인식: $newText');
-              
-              // 디바운스 타이머로 중복 전송 방지
-              _textDebounceTimer?.cancel();
-              _textDebounceTimer = Timer(const Duration(milliseconds: 1500), () {
-                if (newText.isNotEmpty && newText != _lastSentText) {
-                  _sendTextToServer(newText);
-                  _lastSentText = newText;
-                }
-              });
-            }
-          },
-          onSoundLevelChange: (level) {
-            setState(() {
-              _currentSoundLevel = level ?? 0.0;
-            });
-            // 음성 파형 분석 추가 (null 체크)
-            if (level != null) {
-              _analyzeSoundLevel(level);
-            }
-          },
-          localeId: 'ko_KR',
-          listenFor: const Duration(seconds: 30),
-          pauseFor: const Duration(seconds: 3),
-          partialResults: false, // 부분 결과 비활성화
-          cancelOnError: false,
-          listenMode: stt.ListenMode.dictation,
-          onDevice: false,
-        );
-        print('🔄 STT 재시작 완료');
-      }
-    } catch (e) {
-      print('❌ STT 재시작 실패: $e');
-    }
-  }
-
-  // STT 음성 인식 중지
-  Future<void> _stopSTTListening() async {
-    if (_isListening) {
-      setState(() {
-        _isListening = false;
-      });
-      
-      // 디바운스 타이머 정리
-      _textDebounceTimer?.cancel();
-      
-      _speech.stop();
-      print('🔇 STT 음성 인식 중지');
-      
-      // 인식된 텍스트가 있고, 아직 전송하지 않은 텍스트인 경우에만 서버로 전송
-      if (_recognizedText.isNotEmpty && _recognizedText != _lastSentText) {
-        await _sendTextToServer(_recognizedText);
-        _lastSentText = _recognizedText;
-      }
-    }
-  }
-
-  // 인식된 텍스트를 서버로 전송
-  Future<void> _sendTextToServer(String text) async {
-    try {
-      print('🚀 텍스트 서버 전송 시작: $text');
-      final result = await _apiService.sendTextForAnalysis(text);
-      print('✅ 텍스트 분석 응답: $result');
-      
-      // VAD 데이터 추가
-      if (result.containsKey('text_vad')) {
-        final vadData = result['text_vad'];
-        final newDataPoint = EmotionDataPoint(
-          timestamp: DateTime.now(),
-          valence: vadData['valence']?.toDouble() ?? 0.0,
-          arousal: vadData['arousal']?.toDouble() ?? 0.0,
-          dominance: vadData['dominance']?.toDouble() ?? 0.0,
-        );
-        
-        _sessionData.add(newDataPoint);
-        print('📊 텍스트 VAD 데이터 수신: ${jsonEncode(newDataPoint.toJson())}');
-      }
-      
-    } catch (e) {
-      print('❌ 텍스트 서버 전송 실패: $e');
-    }
-  }
-
-  // 실시간 음성 파형 분석 (VAD 추정)
-  void _analyzeSoundLevel(double level) {
-    setState(() {
-      _currentSoundLevel = level;
-    });
-    
-    // 음성 파형을 기반으로 간단한 VAD 추정
-    if (level > 0.1) { // 음성이 감지된 경우
-      final estimatedVAD = _estimateVADFromSoundLevel(level);
-      final newDataPoint = EmotionDataPoint(
-        timestamp: DateTime.now(),
-        valence: estimatedVAD['valence']!,
-        arousal: estimatedVAD['arousal']!,
-        dominance: estimatedVAD['dominance']!,
-      );
-      
-      _sessionData.add(newDataPoint);
-      print('📊 음성 파형 VAD 추정: V=${estimatedVAD['valence']!.toStringAsFixed(2)}, A=${estimatedVAD['arousal']!.toStringAsFixed(2)}, D=${estimatedVAD['dominance']!.toStringAsFixed(2)}');
-    }
-  }
-
-  // 음성 파형을 기반으로 VAD 추정
-  Map<String, double> _estimateVADFromSoundLevel(double level) {
-    // 음성 레벨을 기반으로 간단한 VAD 추정
-    // 높은 음성 레벨 = 높은 활성화 (arousal)
-    // 안정적인 음성 = 높은 지배력 (dominance)
-    // 중간 음성 레벨 = 중립적 감정 (valence)
-    
-    final arousal = (level * 2).clamp(0.0, 1.0); // 음성 레벨에 비례
-    final dominance = (level * 1.5).clamp(0.3, 0.8); // 적당한 지배력
-    final valence = 0.5; // 기본 중립적 감정
-    
-    return {
-      'valence': valence,
-      'arousal': arousal,
-      'dominance': dominance,
-    };
-  }
-
   Widget _buildPermissionStatus() {
     return Positioned(
       top: MediaQuery.of(context).padding.top + 20, // SafeArea 고려
@@ -1784,14 +1809,6 @@ class _SessionScreenState extends State<SessionScreen> {
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                const Spacer(),
-                Text(
-                  _hasCameraPermission ? '사용 가능' : '권한 필요',
-                  style: TextStyle(
-                    color: _hasCameraPermission ? Colors.green : Colors.orange,
-                    fontSize: 12,
-                  ),
-                ),
               ],
             ),
             const SizedBox(height: 8),
@@ -1808,14 +1825,6 @@ class _SessionScreenState extends State<SessionScreen> {
                   style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  _hasMicrophonePermission ? '사용 가능' : '권한 필요',
-                  style: TextStyle(
-                    color: _hasMicrophonePermission ? Colors.green : Colors.red,
-                    fontSize: 12,
                   ),
                 ),
               ],
@@ -1855,45 +1864,25 @@ class _SessionScreenState extends State<SessionScreen> {
   // 대화 시작 버튼
   Widget _buildStartConversationButton() {
     return Container(
+      width: 120,
+      height: 120,
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF6366F1), Color(0xFF8B5CF6)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(50),
+        color: Colors.green,
+        shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF6366F1).withOpacity(0.3),
+            color: Colors.green.withOpacity(0.3),
             blurRadius: 20,
-            offset: const Offset(0, 10),
+            spreadRadius: 5,
           ),
         ],
       ),
-      child: ElevatedButton(
+      child: IconButton(
         onPressed: _startConversation,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.transparent,
-          shadowColor: Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(50),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.play_arrow, color: Colors.white, size: 24),
-            const SizedBox(width: 8),
-            const Text(
-              '대화 시작',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
+        icon: const Icon(
+          Icons.mic,
+          color: Colors.white,
+          size: 40,
         ),
       ),
     );
@@ -1901,44 +1890,64 @@ class _SessionScreenState extends State<SessionScreen> {
 
   // 대화 종료 버튼
   Widget _buildEndConversationButton() {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.red.withOpacity(0.8),
-        borderRadius: BorderRadius.circular(50),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.red.withOpacity(0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: ElevatedButton(
-        onPressed: _endConversation,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.transparent,
-          shadowColor: Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(50),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 16),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.stop, color: Colors.white, size: 24),
-            const SizedBox(width: 8),
-            const Text(
-              '대화 종료',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        // 테스트용 더미 텍스트 버튼
+        Container(
+          width: 80,
+          height: 80,
+          decoration: BoxDecoration(
+            color: Colors.blue,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.blue.withOpacity(0.3),
+                blurRadius: 15,
+                spreadRadius: 3,
               ),
+            ],
+          ),
+          child: IconButton(
+            onPressed: () {
+              // 테스트용 더미 텍스트
+              _processRecognizedText("안녕하세요 오늘 기분이 좋습니다");
+            },
+            icon: const Icon(
+              Icons.text_fields,
+              color: Colors.white,
+              size: 30,
             ),
-          ],
+          ),
         ),
-      ),
+        
+        const SizedBox(width: 20),
+        
+        // 대화 종료 버튼
+        Container(
+          width: 120,
+          height: 120,
+          decoration: BoxDecoration(
+            color: Colors.red,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.red.withOpacity(0.3),
+                blurRadius: 20,
+                spreadRadius: 5,
+              ),
+            ],
+          ),
+          child: IconButton(
+            onPressed: _endConversation,
+            icon: const Icon(
+              Icons.stop,
+              color: Colors.white,
+              size: 40,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -1997,6 +2006,66 @@ class _SessionScreenState extends State<SessionScreen> {
         ],
       ),
     );
+  }
+
+  // AudioManager 초기화
+  Future<void> _initializeAudioManager() async {
+    try {
+      final success = await _audioManager.initialize(
+        onTextRecognized: (text) {
+          print('🎤 AudioManager 텍스트 인식: $text');
+          _processRecognizedText(text);
+        },
+        onSoundLevelChanged: (level) {
+          if (mounted) {
+            setState(() {
+              _currentSoundLevel = level;
+            });
+          }
+        },
+        onError: (error) {
+          print('❌ AudioManager 오류: $error');
+        },
+      );
+      
+      if (success) {
+        print('✅ AudioManager 초기화 성공');
+      } else {
+        print('❌ AudioManager 초기화 실패');
+      }
+    } catch (e) {
+      print('❌ AudioManager 초기화 중 오류: $e');
+    }
+  }
+
+  // 세션 데이터 전송 및 분석 화면 이동
+  Future<void> _sendSessionData() async {
+    try {
+      print('📦 세션 데이터 전송 시작...');
+      
+      // 실제 앱에서는 여기서 서버로 _sessionData를 json으로 변환하여 전송합니다.
+      final payload = jsonEncode(_sessionData.map((d) => d.toJson()).toList());
+      print('📦 전송될 최종 데이터: $payload');
+      
+      // 분석 화면으로 이동
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => AnalysisPendingScreen(sessionData: _sessionData)),
+          (route) => false, // 현재까지의 모든 라우트를 스택에서 제거
+        );
+      }
+      
+    } catch (e) {
+      print('❌ 세션 데이터 전송 실패: $e');
+      
+      // 에러가 발생해도 분석 화면으로 이동
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => AnalysisPendingScreen(sessionData: _sessionData)),
+          (route) => false,
+        );
+      }
+    }
   }
 }
 

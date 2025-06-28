@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:image/image.dart' as img;
 import 'package:provider/provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../providers/emotion_provider.dart';
 import '../../services/emotion_api_services.dart';
 import '../../models/emotion_result.dart';
@@ -37,6 +38,20 @@ class _RecordScreenState extends State<RecordScreen> {
   Future<void> _startSessionAndCamera() async {
     final provider = context.read<EmotionProvider>();
     provider.startSession();
+    
+    // 카메라 권한 확인 및 요청
+    final cameraStatus = await Permission.camera.status;
+    if (cameraStatus.isDenied) {
+      final result = await Permission.camera.request();
+      if (result.isDenied) {
+        setState(() {
+          _hasCameraError = true;
+          _errorMessage = '카메라 권한이 필요합니다.\n설정에서 권한을 허용해주세요.';
+        });
+        return;
+      }
+    }
+    
     await _initializeCamera();
   }
 
@@ -259,30 +274,30 @@ class _RecordScreenState extends State<RecordScreen> {
 
   Widget _buildCameraView() {
     return Column(
-      children: [
-        Expanded(
-          flex: 6,
-          child: AspectRatio(
-            aspectRatio: _controller!.value.aspectRatio,
-            child: CameraPreview(_controller!),
-          ),
-        ),
-        Expanded(
-          flex: 2,
-          child: Center(
-            child: ElevatedButton.icon(
-              onPressed: _endSession,
-              icon: const Icon(Icons.stop),
-              label: const Text('분석 종료'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.redAccent,
-                foregroundColor: Colors.white,
-                minimumSize: const Size(180, 50),
-              ),
-            ),
-          ),
-        ),
-      ],
+              children: [
+                Expanded(
+                  flex: 6,
+                  child: AspectRatio(
+                    aspectRatio: _controller!.value.aspectRatio,
+                    child: CameraPreview(_controller!),
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: Center(
+                    child: ElevatedButton.icon(
+                      onPressed: _endSession,
+                      icon: const Icon(Icons.stop),
+                      label: const Text('분석 종료'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                        foregroundColor: Colors.white,
+                        minimumSize: const Size(180, 50),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
     );
   }
 }

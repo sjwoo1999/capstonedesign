@@ -31,7 +31,7 @@ class HistoryScreen extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: BeMoreTheme.textSecondary,
                 ),
-              ),
+                ),
               const SizedBox(height: 24),
               Expanded(
                 child: _buildHistoryList(context),
@@ -150,8 +150,8 @@ class HistoryScreen extends StatelessWidget {
                             '${item['date']} ${item['time']}',
                             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: BeMoreTheme.textSecondary,
-                            ),
-                          ),
+            ),
+          ),
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -203,8 +203,8 @@ class HistoryScreen extends StatelessWidget {
             fontSize: 12,
             fontWeight: FontWeight.w500,
             color: color,
-          ),
         ),
+      ),
       ],
     );
   }

@@ -1,6 +1,7 @@
 // lib/components/emotion_feedback_card.dart
 import 'package:flutter/material.dart';
 import '../models/emotion_result.dart';
+import '../constants/emotion_constants.dart';
 import 'emotion_chart.dart';
 
 class EmotionFeedbackCard extends StatelessWidget {
