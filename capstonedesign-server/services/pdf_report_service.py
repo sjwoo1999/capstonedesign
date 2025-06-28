@@ -66,6 +66,14 @@ class PDFReportService:
                             gpt_response: Dict) -> Dict:
         """감정 분석 결과를 PDF 리포트로 생성"""
         try:
+            # None 값들을 빈 딕셔너리로 변환하여 안전하게 처리
+            face_result = face_result if face_result is not None else {}
+            audio_result = audio_result if audio_result is not None else {}
+            text_result = text_result if text_result is not None else {}
+            fusion_result = fusion_result if fusion_result is not None else {}
+            cbt_strategy = cbt_strategy if cbt_strategy is not None else {}
+            gpt_response = gpt_response if gpt_response is not None else {}
+            
             # 임시 PDF 파일 생성
             temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
             temp_file.close()
