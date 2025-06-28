@@ -177,7 +177,7 @@ class _RecordScreenState extends State<RecordScreen> {
     final provider = context.read<EmotionProvider>();
     final result = provider.endSession();
     _controller?.dispose();
-    Navigator.pushReplacement(
+    Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => SessionResultScreen(result: result),

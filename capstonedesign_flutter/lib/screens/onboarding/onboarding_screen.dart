@@ -58,7 +58,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     Provider.of<EmotionProvider>(context, listen: false).setOnboardingCompleted(true);
     
     // 홈 화면으로 이동
-    Navigator.of(context).pushReplacement(
+    Navigator.of(context).push(
       MaterialPageRoute(builder: (context) => const HomeScreen()),
     );
   }

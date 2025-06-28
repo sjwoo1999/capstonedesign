@@ -14,7 +14,8 @@ import 'dart:convert';
 import '../../models/emotion_data_point.dart';
 import 'package:image/image.dart' as img;
 import '../../services/emotion_api_services.dart';
-import '../../services/audio_manager.dart'; // AudioManager 추가
+import ../../services/audio_manager.dart; // AudioManager 추가
+import ../../utils/permission_helper.dart; // PermissionHelper 추가
 import 'dart:typed_data';
 import 'dart:io';
 import 'dart:math';
@@ -173,12 +174,12 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
     
     try {
       // 카메라 권한 먼저 확인
-      await _checkCameraPermission();
+      _hasCameraPermission = await PermissionHelper.requestCameraPermission(context);
       
       // 잠시 대기 후 마이크 권한 확인
       await Future.delayed(const Duration(seconds: 1));
       
-      await _checkMicPermission();
+      _hasMicrophonePermission = await PermissionHelper.requestMicrophonePermission(context);
       
       _hasCheckedPermissions = true;
       

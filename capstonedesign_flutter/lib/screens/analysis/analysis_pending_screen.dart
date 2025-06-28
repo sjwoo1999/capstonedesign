@@ -129,7 +129,7 @@ class _AnalysisPendingScreenState extends State<AnalysisPendingScreen>
     
     // 분석 결과 화면으로 이동
     if (mounted) {
-      Navigator.of(context).pushReplacement(
+      Navigator.of(context).push(
         MaterialPageRoute(
           builder: (context) => AnalysisResultScreen(
             sessionData: widget.sessionData,
