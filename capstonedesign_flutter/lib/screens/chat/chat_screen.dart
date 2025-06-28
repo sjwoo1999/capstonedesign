@@ -82,8 +82,13 @@ class _ChatScreenState extends State<ChatScreen> {
                 return ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.all(16),
-                  itemCount: chatProvider.messages.length,
+                  itemCount: chatProvider.messages.length + (chatProvider.isProcessing ? 1 : 0),
                   itemBuilder: (context, index) {
+                    // 로딩 중이고 마지막 인덱스라면 로딩 인디케이터 표시
+                    if (chatProvider.isProcessing && index == chatProvider.messages.length) {
+                      return _buildLoadingIndicator(chatProvider.loadingMessage);
+                    }
+                    
                     final message = chatProvider.messages[index];
                     return _buildMessageBubble(message);
                   },
@@ -211,30 +216,6 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 const SizedBox(width: 8),
                 
-                // 음성 인식 버튼
-                GestureDetector(
-                  onTapDown: (_) => chatProvider.startListening(),
-                  onTapUp: (_) => chatProvider.stopListening(),
-                  onTapCancel: () => chatProvider.stopListening(),
-                  child: Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: chatProvider.isListening 
-                          ? Colors.red 
-                          : BeMoreTheme.primaryColor,
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                    child: Icon(
-                      chatProvider.isListening ? Icons.mic : Icons.mic_none,
-                      color: Colors.white,
-                      size: 24,
-                    ),
-                  ),
-                ),
-                
-                const SizedBox(width: 8),
-                
                 // 전송 버튼
                 GestureDetector(
                   onTap: () {
@@ -262,6 +243,65 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildLoadingIndicator(String loadingMessage) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            backgroundColor: BeMoreTheme.primaryColor,
+            child: const Icon(Icons.smart_toy, color: Colors.white),
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Container(
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.75,
+              ),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.1),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(BeMoreTheme.primaryColor),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      loadingMessage,
+                      style: const TextStyle(
+                        color: Colors.black87,
+                        fontSize: 16,
+                        fontStyle: FontStyle.italic,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

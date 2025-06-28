@@ -14,6 +14,7 @@ class ChatProvider extends ChangeNotifier {
   bool _isListening = false;
   bool _isProcessing = false;
   String _currentUserInput = '';
+  String _loadingMessage = '';
   
   final List<String> _loadingMessages = [
     "생각을 정리하고 있어요...",
@@ -28,6 +29,7 @@ class ChatProvider extends ChangeNotifier {
   bool get isListening => _isListening;
   bool get isProcessing => _isProcessing;
   String get currentUserInput => _currentUserInput;
+  String get loadingMessage => _loadingMessage;
   
   ChatProvider() {
     _initializeAudioManager();
@@ -72,15 +74,8 @@ class ChatProvider extends ChangeNotifier {
     _currentUserInput = '';
     _isProcessing = true;
     
-    // 1. 임시 로딩 메시지 추가 (랜덤)
-    final loadingMessage = ChatMessage(
-      id: _uuid.v4(),
-      content: (_loadingMessages..shuffle()).first,
-      type: MessageType.ai,
-      timestamp: DateTime.now(),
-      isProcessing: true,
-    );
-    _messages.add(loadingMessage);
+    // 로딩 메시지 설정 (실제 메시지로 추가하지 않음)
+    _loadingMessage = (_loadingMessages..shuffle()).first;
     
     notifyListeners();
     
@@ -88,10 +83,10 @@ class ChatProvider extends ChangeNotifier {
     try {
       final aiResponse = await _geminiService.getResponse(content);
       
-      // 2. 임시 메시지 제거
-      _messages.removeWhere((msg) => msg.isProcessing);
+      // 로딩 메시지 초기화
+      _loadingMessage = '';
       
-      // 3. 실제 AI 메시지 추가
+      // 실제 AI 메시지 추가
       final aiMessage = ChatMessage(
         id: _uuid.v4(),
         content: aiResponse,
@@ -100,7 +95,9 @@ class ChatProvider extends ChangeNotifier {
       );
       _messages.add(aiMessage);
     } catch (e) {
-      _messages.removeWhere((msg) => msg.isProcessing);
+      // 로딩 메시지 초기화
+      _loadingMessage = '';
+      
       final errorMessage = ChatMessage(
         id: _uuid.v4(),
         content: '죄송합니다. 응답을 생성하는 중에 오류가 발생했습니다.',
@@ -148,6 +145,7 @@ class ChatProvider extends ChangeNotifier {
     _messages.clear();
     _currentUserInput = '';
     _isProcessing = false;
+    _loadingMessage = '';
     await _geminiService.clearConversation();
     notifyListeners();
   }

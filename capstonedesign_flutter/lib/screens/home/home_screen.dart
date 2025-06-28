@@ -342,7 +342,6 @@ class HomeTab extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  _buildFeatureChip('음성 인식', Icons.mic, BeMoreTheme.accentColor),
                   _buildFeatureChip('AI 응답', Icons.smart_toy, BeMoreTheme.accentColor),
                   _buildFeatureChip('실시간 대화', Icons.chat, BeMoreTheme.accentColor),
                 ],
