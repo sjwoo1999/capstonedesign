@@ -1,0 +1,239 @@
+============================================================
+🎭 멀티모달 감정 분석 서버
+AI 기반 종합 감정 분석 및 CBT 전략 제안
+============================================================
+📅 시작 시간: 2025-06-26 16:02:00
+
+🔍 의존성 확인 중...
+  ✅ flask
+  ✅ numpy
+  ✅ cv2
+  ✅ tensorflow
+  ✅ whisper
+  ✅ librosa
+  ✅ reportlab
+  ✅ requests
+✅ 모든 의존성이 설치되어 있습니다.
+🚀 서버 시작 중...
+⏳ 서버 시작 대기 중... (모델 로딩 시간 포함)
+   1/4 단계 확인 중... (5초 경과)
+✅ 서버가 성공적으로 시작되었습니다!
+🌐 서버 URL: http://0.0.0.0:5001
+
+🧪 자동 테스트 실행 중...
+1️⃣ 서버 상태 확인
+   ✅ 서버 정상
+2️⃣ 모킹 데이터 테스트
+   ✅ 얼굴: Happy
+   ✅ 음성: 안녕하세요, 오늘은 정말 기분이 좋습...
+   ✅ 텍스트: joy
+3️⃣ 텍스트 감정 분석 테스트
+   ✅ 감정: neutral
+   ✅ VAD: {'arousal': 0.5, 'dominance': 0.5, 'valence': 0.5}
+4️⃣ 멀티모달 분석 테스트
+   ✅ 최종 감정: excited
+   ✅ CBT 전략: 감정 인식 및 표현 전략
+   ✅ GPT 응답: 멀티모달 감정 분석 결과를 종합해보겠습니다.
+
+현재 감정 상태:
+- 종합 감정: 기쁨 (H...
+   ✅ PDF 리포트: 생성됨
+
+🎉 모든 테스트가 성공적으로 완료되었습니다!
+
+🎉 서버가 성공적으로 실행되었습니다!
+🌐 서버 URL: http://0.0.0.0:5001
+
+💡 다음 중 하나를 선택하세요:
+   - 대화형 메뉴 사용 (권장)
+   - 직접 API 호출
+   - 브라우저에서 http://0.0.0.0:5001/health 접속
+
+========================================
+🎛️  멀티모달 감정 분석 서버 메뉴
+========================================
+1. 서버 상태 확인
+2. 모킹 데이터 테스트
+3. 텍스트 감정 분석 테스트
+4. CBT 전략 매핑 테스트
+5. GPT 응답 생성 테스트
+6. 멀티모달 분석 테스트
+7. API 사용 예시 보기
+8. 서버 종료
+0. 종료
+
+선택하세요 (0-8): 🛑 서버를 종료합니다...
+✅ 서버가 종료되었습니다.
+Traceback (most recent call last):
+  File "/Users/_woo_s.j/Desktop/woo/workspace/capstonedesign/capstonedesign-server/run_server.py", line 420, in <module>
+    main() 
+  File "/Users/_woo_s.j/Desktop/woo/workspace/capstonedesign/capstonedesign-server/run_server.py", line 404, in main
+    interactive_menu()
+  File "/Users/_woo_s.j/Desktop/woo/workspace/capstonedesign/capstonedesign-server/run_server.py", line 244, in interactive_menu
+    choice = input("\n선택하세요 (0-8): ").strip()
+OSError: [Errno 5] Input/output error
+2025-06-28 12:06:36,630 - __main__ - INFO - 🚀 멀티모달 감정 분석 API 서버 시작...
+2025-06-28 12:06:36,630 - __main__ - INFO - 📝 API 엔드포인트:
+2025-06-28 12:06:36,630 - __main__ - INFO -    - POST /analyze_multimodal_emotion: 메인 멀티모달 분석
+2025-06-28 12:06:36,630 - __main__ - INFO -    - POST /analyze_face_emotion: 얼굴 감정 분석
+2025-06-28 12:06:36,630 - __main__ - INFO -    - POST /analyze_audio_emotion: 음성 감정 분석
+2025-06-28 12:06:36,630 - __main__ - INFO -    - POST /analyze_text_emotion: 텍스트 감정 분석
+2025-06-28 12:06:36,630 - __main__ - INFO -    - POST /generate_question: Gemini AI 질문 생성
+2025-06-28 12:06:36,630 - __main__ - INFO -    - GET /health: 서버 상태 확인
+2025-06-28 12:06:36,630 - __main__ - INFO -    - GET /test_mock: 모킹 데이터 테스트
+2025-06-28 12:06:37,879 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5001
+ * Running on http://192.168.219.108:5001
+2025-06-28 12:06:37,880 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-06-28 12:06:37,880 - werkzeug - INFO -  * Restarting with stat
+2025-06-28 12:06:43,435 - __main__ - INFO - 🚀 멀티모달 감정 분석 API 서버 시작...
+2025-06-28 12:06:43,435 - __main__ - INFO - 📝 API 엔드포인트:
+2025-06-28 12:06:43,435 - __main__ - INFO -    - POST /analyze_multimodal_emotion: 메인 멀티모달 분석
+2025-06-28 12:06:43,435 - __main__ - INFO -    - POST /analyze_face_emotion: 얼굴 감정 분석
+2025-06-28 12:06:43,435 - __main__ - INFO -    - POST /analyze_audio_emotion: 음성 감정 분석
+2025-06-28 12:06:43,435 - __main__ - INFO -    - POST /analyze_text_emotion: 텍스트 감정 분석
+2025-06-28 12:06:43,435 - __main__ - INFO -    - POST /generate_question: Gemini AI 질문 생성
+2025-06-28 12:06:43,435 - __main__ - INFO -    - GET /health: 서버 상태 확인
+2025-06-28 12:06:43,435 - __main__ - INFO -    - GET /test_mock: 모킹 데이터 테스트
+2025-06-28 12:06:44,330 - werkzeug - WARNING -  * Debugger is active!
+2025-06-28 12:06:44,346 - werkzeug - INFO -  * Debugger PIN: 771-419-989
+2025-06-28 12:07:21,380 - __main__ - INFO - 🚀 멀티모달 감정 분석 API 서버 시작...
+2025-06-28 12:07:21,380 - __main__ - INFO - 📝 API 엔드포인트:
+2025-06-28 12:07:21,380 - __main__ - INFO -    - POST /analyze_multimodal_emotion: 메인 멀티모달 분석
+2025-06-28 12:07:21,380 - __main__ - INFO -    - POST /analyze_face_emotion: 얼굴 감정 분석
+2025-06-28 12:07:21,380 - __main__ - INFO -    - POST /analyze_audio_emotion: 음성 감정 분석
+2025-06-28 12:07:21,380 - __main__ - INFO -    - POST /analyze_text_emotion: 텍스트 감정 분석
+2025-06-28 12:07:21,380 - __main__ - INFO -    - POST /generate_question: Gemini AI 질문 생성
+2025-06-28 12:07:21,380 - __main__ - INFO -    - GET /health: 서버 상태 확인
+2025-06-28 12:07:21,380 - __main__ - INFO -    - GET /test_mock: 모킹 데이터 테스트
+2025-06-28 12:07:21,926 - werkzeug - INFO - 127.0.0.1 - - [28/Jun/2025 12:07:21] "GET /health HTTP/1.1" 200 -
+2025-06-28 12:07:21,929 - werkzeug - INFO - 127.0.0.1 - - [28/Jun/2025 12:07:21] "GET /health HTTP/1.1" 200 -
+2025-06-28 12:07:21,931 - werkzeug - INFO - 127.0.0.1 - - [28/Jun/2025 12:07:21] "GET /test_mock HTTP/1.1" 200 -
+2025-06-28 12:07:21,932 - werkzeug - INFO - 127.0.0.1 - - [28/Jun/2025 12:07:21] "POST /analyze_text_emotion HTTP/1.1" 200 -
+2025-06-28 12:07:21,934 - __main__ - INFO - Received request - Face: False, Audio: False, Text: True
+2025-06-28 12:07:21,934 - __main__ - INFO - No face image provided, skipping face analysis
+2025-06-28 12:07:21,934 - __main__ - INFO - No audio provided, skipping audio analysis
+2025-06-28 12:07:21,934 - __main__ - INFO - Starting text emotion analysis...
+2025-06-28 12:07:21,934 - __main__ - INFO - Starting VAD fusion...
+2025-06-28 12:07:21,934 - __main__ - INFO - Starting CBT strategy mapping...
+2025-06-28 12:07:21,935 - __main__ - INFO - Starting GPT response generation...
+2025-06-28 12:07:21,935 - __main__ - INFO - Starting PDF report generation...
+2025-06-28 12:07:21,951 - __main__ - INFO - Multimodal emotion analysis completed successfully
+2025-06-28 12:07:21,951 - werkzeug - INFO - 127.0.0.1 - - [28/Jun/2025 12:07:21] "POST /analyze_multimodal_emotion HTTP/1.1" 200 -
+2025-06-28 12:07:51,710 - werkzeug - INFO - 127.0.0.1 - - [28/Jun/2025 12:07:51] "GET /health HTTP/1.1" 200 -
+2025-06-28 12:07:53,426 - werkzeug - INFO - 127.0.0.1 - - [28/Jun/2025 12:07:53] "GET /test_mock HTTP/1.1" 200 -
+2025-06-28 12:07:55,894 - werkzeug - INFO - 127.0.0.1 - - [28/Jun/2025 12:07:55] "POST /analyze_text_emotion HTTP/1.1" 200 -
+2025-06-28 12:07:57,334 - werkzeug - INFO - 127.0.0.1 - - [28/Jun/2025 12:07:57] "POST /analyze_text_emotion HTTP/1.1" 200 -
+2025-06-28 12:07:57,760 - werkzeug - INFO - 127.0.0.1 - - [28/Jun/2025 12:07:57] "POST /generate_gpt_response HTTP/1.1" 200 -
+2025-06-28 12:07:58,572 - __main__ - INFO - Received request - Face: False, Audio: False, Text: True
+2025-06-28 12:07:58,573 - __main__ - INFO - No face image provided, skipping face analysis
+2025-06-28 12:07:58,573 - __main__ - INFO - No audio provided, skipping audio analysis
+2025-06-28 12:07:58,573 - __main__ - INFO - Starting text emotion analysis...
+2025-06-28 12:07:58,574 - __main__ - INFO - Starting VAD fusion...
+2025-06-28 12:07:58,574 - __main__ - INFO - Starting CBT strategy mapping...
+2025-06-28 12:07:58,574 - __main__ - INFO - Starting GPT response generation...
+2025-06-28 12:07:58,574 - __main__ - INFO - Starting PDF report generation...
+2025-06-28 12:07:58,595 - __main__ - INFO - Multimodal emotion analysis completed successfully
+2025-06-28 12:07:58,595 - werkzeug - INFO - 127.0.0.1 - - [28/Jun/2025 12:07:58] "POST /analyze_multimodal_emotion HTTP/1.1" 200 -
+2025-06-28 12:12:53,447 - __main__ - INFO - 🚀 멀티모달 감정 분석 API 서버 시작...
+2025-06-28 12:12:53,447 - __main__ - INFO - 📝 API 엔드포인트:
+2025-06-28 12:12:53,447 - __main__ - INFO -    - POST /analyze_multimodal_emotion: 메인 멀티모달 분석
+2025-06-28 12:12:53,447 - __main__ - INFO -    - POST /analyze_face_emotion: 얼굴 감정 분석
+2025-06-28 12:12:53,447 - __main__ - INFO -    - POST /analyze_audio_emotion: 음성 감정 분석
+2025-06-28 12:12:53,447 - __main__ - INFO -    - POST /analyze_text_emotion: 텍스트 감정 분석
+2025-06-28 12:12:53,447 - __main__ - INFO -    - POST /generate_question: Gemini AI 질문 생성
+2025-06-28 12:12:53,447 - __main__ - INFO -    - GET /health: 서버 상태 확인
+2025-06-28 12:12:53,447 - __main__ - INFO -    - GET /test_mock: 모킹 데이터 테스트
+2025-06-28 12:14:58,569 - __main__ - INFO - 🚀 멀티모달 감정 분석 API 서버 시작...
+2025-06-28 12:14:58,569 - __main__ - INFO - 📝 API 엔드포인트:
+2025-06-28 12:14:58,569 - __main__ - INFO -    - POST /analyze_multimodal_emotion: 메인 멀티모달 분석
+2025-06-28 12:14:58,569 - __main__ - INFO -    - POST /analyze_face_emotion: 얼굴 감정 분석
+2025-06-28 12:14:58,569 - __main__ - INFO -    - POST /analyze_audio_emotion: 음성 감정 분석
+2025-06-28 12:14:58,569 - __main__ - INFO -    - POST /analyze_text_emotion: 텍스트 감정 분석
+2025-06-28 12:14:58,569 - __main__ - INFO -    - POST /generate_question: Gemini AI 질문 생성
+2025-06-28 12:14:58,569 - __main__ - INFO -    - GET /health: 서버 상태 확인
+2025-06-28 12:14:58,570 - __main__ - INFO -    - GET /test_mock: 모킹 데이터 테스트
+2025-06-28 12:15:00,041 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5001
+ * Running on http://192.168.219.108:5001
+2025-06-28 12:15:00,041 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-06-28 12:15:00,042 - werkzeug - INFO -  * Restarting with stat
+2025-06-28 12:15:04,864 - __main__ - INFO - 🚀 멀티모달 감정 분석 API 서버 시작...
+2025-06-28 12:15:04,864 - __main__ - INFO - 📝 API 엔드포인트:
+2025-06-28 12:15:04,864 - __main__ - INFO -    - POST /analyze_multimodal_emotion: 메인 멀티모달 분석
+2025-06-28 12:15:04,864 - __main__ - INFO -    - POST /analyze_face_emotion: 얼굴 감정 분석
+2025-06-28 12:15:04,864 - __main__ - INFO -    - POST /analyze_audio_emotion: 음성 감정 분석
+2025-06-28 12:15:04,864 - __main__ - INFO -    - POST /analyze_text_emotion: 텍스트 감정 분석
+2025-06-28 12:15:04,864 - __main__ - INFO -    - POST /generate_question: Gemini AI 질문 생성
+2025-06-28 12:15:04,864 - __main__ - INFO -    - GET /health: 서버 상태 확인
+2025-06-28 12:15:04,864 - __main__ - INFO -    - GET /test_mock: 모킹 데이터 테스트
+2025-06-28 12:15:05,788 - werkzeug - WARNING -  * Debugger is active!
+2025-06-28 12:15:05,806 - werkzeug - INFO -  * Debugger PIN: 771-419-989
+2025-06-28 12:15:05,843 - werkzeug - INFO - 127.0.0.1 - - [28/Jun/2025 12:15:05] "GET /health HTTP/1.1" 200 -
+2025-06-28 12:15:05,853 - werkzeug - INFO - 127.0.0.1 - - [28/Jun/2025 12:15:05] "GET /health HTTP/1.1" 200 -
+2025-06-28 12:15:05,854 - werkzeug - INFO - 127.0.0.1 - - [28/Jun/2025 12:15:05] "GET /test_mock HTTP/1.1" 200 -
+2025-06-28 12:15:05,874 - werkzeug - INFO - 127.0.0.1 - - [28/Jun/2025 12:15:05] "POST /analyze_text_emotion HTTP/1.1" 200 -
+2025-06-28 12:15:05,876 - __main__ - INFO - Received request - Face: False, Audio: False, Text: True
+2025-06-28 12:15:05,876 - __main__ - INFO - No face image provided, skipping face analysis
+2025-06-28 12:15:05,876 - __main__ - INFO - No audio provided, skipping audio analysis
+2025-06-28 12:15:05,876 - __main__ - INFO - Starting text emotion analysis...
+2025-06-28 12:15:05,877 - __main__ - INFO - Starting VAD fusion...
+2025-06-28 12:15:05,877 - __main__ - INFO - Starting CBT strategy mapping...
+2025-06-28 12:15:05,877 - __main__ - INFO - Starting GPT response generation...
+2025-06-28 12:15:05,877 - __main__ - INFO - Starting PDF report generation...
+2025-06-28 12:15:05,908 - __main__ - INFO - Multimodal emotion analysis completed successfully
+2025-06-28 12:15:05,909 - werkzeug - INFO - 127.0.0.1 - - [28/Jun/2025 12:15:05] "POST /analyze_multimodal_emotion HTTP/1.1" 200 -
+2025-06-28 12:16:35,200 - __main__ - INFO - Received request - Face: False, Audio: False, Text: True
+2025-06-28 12:16:35,201 - __main__ - INFO - No face image provided, skipping face analysis
+2025-06-28 12:16:35,201 - __main__ - INFO - No audio provided, skipping audio analysis
+2025-06-28 12:16:35,201 - __main__ - INFO - Starting text emotion analysis...
+2025-06-28 12:16:35,202 - __main__ - INFO - Starting VAD fusion...
+2025-06-28 12:16:35,202 - __main__ - INFO - Starting CBT strategy mapping...
+2025-06-28 12:16:35,206 - __main__ - INFO - Starting GPT response generation...
+2025-06-28 12:16:35,206 - __main__ - INFO - Starting PDF report generation...
+2025-06-28 12:16:35,224 - __main__ - INFO - Multimodal emotion analysis completed successfully
+2025-06-28 12:16:35,225 - werkzeug - INFO - 192.168.219.101 - - [28/Jun/2025 12:16:35] "POST /analyze_multimodal_emotion HTTP/1.1" 200 -
+2025-06-28 12:17:46,652 - __main__ - INFO - 🚀 멀티모달 감정 분석 API 서버 시작...
+2025-06-28 12:17:46,653 - __main__ - INFO - 📝 API 엔드포인트:
+2025-06-28 12:17:46,653 - __main__ - INFO -    - POST /analyze_multimodal_emotion: 메인 멀티모달 분석
+2025-06-28 12:17:46,653 - __main__ - INFO -    - POST /analyze_face_emotion: 얼굴 감정 분석
+2025-06-28 12:17:46,653 - __main__ - INFO -    - POST /analyze_audio_emotion: 음성 감정 분석
+2025-06-28 12:17:46,653 - __main__ - INFO -    - POST /analyze_text_emotion: 텍스트 감정 분석
+2025-06-28 12:17:46,653 - __main__ - INFO -    - POST /generate_question: Gemini AI 질문 생성
+2025-06-28 12:17:46,653 - __main__ - INFO -    - GET /health: 서버 상태 확인
+2025-06-28 12:17:46,653 - __main__ - INFO -    - GET /test_mock: 모킹 데이터 테스트
+2025-06-28 12:17:47,881 - werkzeug - INFO - [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5001
+ * Running on http://192.168.219.108:5001
+2025-06-28 12:17:47,881 - werkzeug - INFO - [33mPress CTRL+C to quit[0m
+2025-06-28 12:17:47,882 - werkzeug - INFO -  * Restarting with stat
+2025-06-28 12:17:51,858 - __main__ - INFO - 🚀 멀티모달 감정 분석 API 서버 시작...
+2025-06-28 12:17:51,858 - __main__ - INFO - 📝 API 엔드포인트:
+2025-06-28 12:17:51,858 - __main__ - INFO -    - POST /analyze_multimodal_emotion: 메인 멀티모달 분석
+2025-06-28 12:17:51,858 - __main__ - INFO -    - POST /analyze_face_emotion: 얼굴 감정 분석
+2025-06-28 12:17:51,858 - __main__ - INFO -    - POST /analyze_audio_emotion: 음성 감정 분석
+2025-06-28 12:17:51,858 - __main__ - INFO -    - POST /analyze_text_emotion: 텍스트 감정 분석
+2025-06-28 12:17:51,858 - __main__ - INFO -    - POST /generate_question: Gemini AI 질문 생성
+2025-06-28 12:17:51,858 - __main__ - INFO -    - GET /health: 서버 상태 확인
+2025-06-28 12:17:51,858 - __main__ - INFO -    - GET /test_mock: 모킹 데이터 테스트
+2025-06-28 12:17:52,750 - werkzeug - WARNING -  * Debugger is active!
+2025-06-28 12:17:52,765 - werkzeug - INFO -  * Debugger PIN: 771-419-989
+2025-06-28 12:17:52,796 - werkzeug - INFO - 127.0.0.1 - - [28/Jun/2025 12:17:52] "GET /health HTTP/1.1" 200 -
+2025-06-28 12:17:52,798 - werkzeug - INFO - 127.0.0.1 - - [28/Jun/2025 12:17:52] "GET /health HTTP/1.1" 200 -
+2025-06-28 12:17:52,799 - werkzeug - INFO - 127.0.0.1 - - [28/Jun/2025 12:17:52] "GET /test_mock HTTP/1.1" 200 -
+2025-06-28 12:17:52,804 - werkzeug - INFO - 127.0.0.1 - - [28/Jun/2025 12:17:52] "POST /analyze_text_emotion HTTP/1.1" 200 -
+2025-06-28 12:17:52,806 - __main__ - INFO - Received request - Face: False, Audio: False, Text: True
+2025-06-28 12:17:52,806 - __main__ - INFO - No face image provided, skipping face analysis
+2025-06-28 12:17:52,806 - __main__ - INFO - No audio provided, skipping audio analysis
+2025-06-28 12:17:52,806 - __main__ - INFO - Starting text emotion analysis...
+2025-06-28 12:17:52,806 - __main__ - INFO - Starting VAD fusion...
+2025-06-28 12:17:52,806 - __main__ - INFO - Starting CBT strategy mapping...
+2025-06-28 12:17:52,806 - __main__ - INFO - Starting GPT response generation...
+2025-06-28 12:17:52,806 - __main__ - INFO - Starting PDF report generation...
+2025-06-28 12:17:52,818 - __main__ - INFO - Multimodal emotion analysis completed successfully
+2025-06-28 12:17:52,818 - werkzeug - INFO - 127.0.0.1 - - [28/Jun/2025 12:17:52] "POST /analyze_multimodal_emotion HTTP/1.1" 200 -
+2025-06-28 12:18:18,053 - werkzeug - INFO -  * Detected change in '/Users/_woo_s.j/Desktop/woo/workspace/capstonedesign/capstonedesign-server/multimodal_emotion_api.py', reloading
+2025-06-28 12:18:18,757 - werkzeug - INFO -  * Restarting with stat

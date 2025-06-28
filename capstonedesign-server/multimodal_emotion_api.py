@@ -602,4 +602,4 @@ if __name__ == '__main__':
     logger.info("   - GET /chat/gemini/status: Gemini 서비스 상태")
     
     initialize_services()
-    app.run(host='0.0.0.0', port=5001, debug=True) 
+    app.run(host='0.0.0.0', port=5001, debug=True)
