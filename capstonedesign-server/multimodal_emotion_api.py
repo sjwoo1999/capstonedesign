@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import sys
 
 # 서비스 임포트
 from services.face_emotion_service import FaceEmotionService
@@ -13,9 +14,17 @@ from services.vad_fusion_service import VADFusionService
 from services.cbt_strategy_service import CBTStrategyService
 from services.gpt_service import GPTService
 from services.pdf_report_service import PDFReportService
+from services.gemini_question_service import GeminiQuestionService
 
 # 로깅 설정
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('server.log'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -29,10 +38,11 @@ vad_fusion_service = None
 cbt_strategy_service = None
 gpt_service = None
 pdf_service = None
+gemini_question_service = None
 
 def initialize_services():
     """서비스 인스턴스 초기화"""
-    global face_service, audio_service, text_service, vad_fusion_service, cbt_strategy_service, gpt_service, pdf_service
+    global face_service, audio_service, text_service, vad_fusion_service, cbt_strategy_service, gpt_service, pdf_service, gemini_question_service
     
     if face_service is None:
         face_service = FaceEmotionService()
@@ -48,6 +58,8 @@ def initialize_services():
         gpt_service = GPTService()
     if pdf_service is None:
         pdf_service = PDFReportService()
+    if gemini_question_service is None:
+        gemini_question_service = GeminiQuestionService()
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -64,7 +76,8 @@ def health_check():
                 'vad_fusion': 'available',
                 'cbt_strategy': 'available',
                 'gpt_service': 'available',
-                'pdf_service': 'available'
+                'pdf_service': 'available',
+                'gemini_question_service': 'available'
             }
         })
     except Exception as e:
@@ -339,12 +352,53 @@ def test_mock():
             'vad_fusion_service': vad_fusion_service.get_mock_result(),
             'cbt_strategy_service': cbt_strategy_service.get_mock_result(),
             'gpt_service': gpt_service.get_mock_result(),
-            'pdf_service': pdf_service.get_mock_result()
+            'pdf_service': pdf_service.get_mock_result(),
+            'gemini_question_service': gemini_question_service.get_mock_result()
         })
         
     except Exception as e:
         logger.error(f"Error in mock test: {str(e)}")
         return jsonify({'error': f'Mock test failed: {str(e)}'}), 500
+
+@app.route('/generate_question', methods=['POST'])
+def generate_question():
+    """Gemini AI를 사용한 다음 질문 생성 API"""
+    logger.info("🤖 Gemini 질문 생성 요청")
+    try:
+        # 서비스 초기화 확인
+        initialize_services()
+        
+        data = request.get_json()
+        if not data:
+            logger.error("❌ JSON 데이터가 제공되지 않음")
+            return jsonify({'error': 'No JSON data provided'}), 400
+        
+        conversation_history = data.get('history', [])
+        emotion_tag = data.get('emotion_tag', None)
+        vad_score = data.get('vad_score', None)
+        
+        logger.info(f"📊 질문 생성 요청 - 대화 길이: {len(conversation_history)}, 감정: {emotion_tag}")
+        
+        # Gemini 서비스로 다음 질문 생성
+        result = gemini_question_service.generate_next_question(
+            conversation_history=conversation_history,
+            emotion_tag=emotion_tag,
+            vad_score=vad_score
+        )
+        
+        if result.get('success'):
+            logger.info(f"✅ 질문 생성 완료: {result.get('question', '')[:30]}...")
+        else:
+            logger.warning(f"⚠️ 질문 생성 실패: {result.get('error', 'Unknown error')}")
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"❌ 질문 생성 오류: {str(e)}")
+        return jsonify({
+            'error': f'Question generation failed: {str(e)}',
+            'timestamp': datetime.now().isoformat()
+        }), 500
 
 if __name__ == '__main__':
     logger.info("🚀 멀티모달 감정 분석 API 서버 시작...")
@@ -353,6 +407,7 @@ if __name__ == '__main__':
     logger.info("   - POST /analyze_face_emotion: 얼굴 감정 분석")
     logger.info("   - POST /analyze_audio_emotion: 음성 감정 분석")
     logger.info("   - POST /analyze_text_emotion: 텍스트 감정 분석")
+    logger.info("   - POST /generate_question: Gemini AI 질문 생성")
     logger.info("   - GET /health: 서버 상태 확인")
     logger.info("   - GET /test_mock: 모킹 데이터 테스트")
     
