@@ -883,9 +883,9 @@ class _AnalysisResultScreenState extends State<AnalysisResultScreen> {
           width: double.infinity,
           child: ElevatedButton(
             onPressed: () {
-              Navigator.of(context).pushAndRemoveUntil(
+              Navigator.of(context).push(
                 MaterialPageRoute(builder: (context) => const HomeScreen()),
-                (route) => false,
+                
               );
             },
             style: ElevatedButton.styleFrom(

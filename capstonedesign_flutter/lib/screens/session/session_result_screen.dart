@@ -57,10 +57,10 @@ class SessionResultScreen extends StatelessWidget {
             const SizedBox(height: 48),
             ElevatedButton(
               onPressed: () {
-                Navigator.pushAndRemoveUntil(
+                Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const RootScreen()),
-                  (route) => false,
+                  
                 );
               },
               style: ElevatedButton.styleFrom(

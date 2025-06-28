@@ -2049,9 +2049,9 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
       
       // 분석 화면으로 이동
       if (mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
+        Navigator.of(context).push(
           MaterialPageRoute(builder: (context) => AnalysisPendingScreen(sessionData: _sessionData)),
-          (route) => false, // 현재까지의 모든 라우트를 스택에서 제거
+           // 현재까지의 모든 라우트를 스택에서 제거
         );
       }
       
@@ -2060,9 +2060,9 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
       
       // 에러가 발생해도 분석 화면으로 이동
       if (mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
+        Navigator.of(context).push(
           MaterialPageRoute(builder: (context) => AnalysisPendingScreen(sessionData: _sessionData)),
-          (route) => false,
+          
         );
       }
     }
