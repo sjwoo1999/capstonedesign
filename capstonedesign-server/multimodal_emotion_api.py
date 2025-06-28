@@ -14,6 +14,7 @@ from services.vad_fusion_service import VADFusionService
 from services.cbt_strategy_service import CBTStrategyService
 from services.gpt_service import GPTService
 from services.pdf_report_service import PDFReportService
+from services.gemini_question_service import GeminiQuestionService
 
 # 로그 디렉토리 생성
 log_dir = "logs"
@@ -57,7 +58,7 @@ app_logger.addHandler(file_handler)
 app = Flask(__name__)
 CORS(app)
 
-# 서비스 인스턴스 (지연 초기화)
+# 서비스 인스턴스
 face_service = None
 audio_service = None
 text_service = None
@@ -65,10 +66,11 @@ vad_fusion_service = None
 cbt_strategy_service = None
 gpt_service = None
 pdf_service = None
+gemini_service = None
 
 def initialize_services():
     """서비스 인스턴스 초기화"""
-    global face_service, audio_service, text_service, vad_fusion_service, cbt_strategy_service, gpt_service, pdf_service
+    global face_service, audio_service, text_service, vad_fusion_service, cbt_strategy_service, gpt_service, pdf_service, gemini_service
     
     logger.info("🔧 서비스 초기화 시작...")
     
@@ -107,7 +109,13 @@ def initialize_services():
         pdf_service = PDFReportService()
         logger.info("✅ PDF 리포트 서비스 초기화 완료")
     
+    if gemini_service is None:
+        logger.info("🤖 Gemini AI 채팅 서비스 초기화...")
+        gemini_service = GeminiQuestionService()
+        logger.info("✅ Gemini AI 채팅 서비스 초기화 완료")
+    
     logger.info("🎉 모든 서비스 초기화 완료!")
+    logger.info(f"   - Gemini 서비스 사용 가능: {gemini_service.is_available() if gemini_service else False}")
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -126,7 +134,8 @@ def health_check():
                 'vad_fusion': 'available',
                 'cbt_strategy': 'available',
                 'gpt_service': 'available',
-                'pdf_service': 'available'
+                'pdf_service': 'available',
+                'gemini_service': 'available'
             }
         })
     except Exception as e:
@@ -483,6 +492,79 @@ def generate_pdf_report():
         logger.error(f"❌ PDF 리포트 생성 오류: {str(e)}")
         return jsonify({'error': f'PDF report generation failed: {str(e)}'}), 500
 
+@app.route("/chat/gemini", methods=["POST"])
+def chat_with_gemini():
+    """Gemini AI와의 채팅 API"""
+    logger.info("💬 Gemini 채팅 요청")
+    try:
+        data = request.get_json()
+        user_message = data.get("message", "")
+        conversation_history = data.get("conversation_history", [])
+        
+        if not user_message:
+            return jsonify({"error": "메시지가 필요합니다"}), 400
+        
+        initialize_services()
+        
+        if not gemini_service:
+            return jsonify({"error": "Gemini 서비스가 초기화되지 않았습니다"}), 500
+        
+        result = gemini_service.get_response(user_message, conversation_history)
+        
+        if result.get("success"):
+            logger.info("✅ Gemini 채팅 응답 생성 완료")
+            return jsonify({
+                "success": True,
+                "response": result["response"],
+                "conversation_history": gemini_service.get_conversation_history()
+            })
+        else:
+            logger.warning(f"⚠️ Gemini 채팅 응답 생성 실패: {result.get('error', 'Unknown error')}")
+            return jsonify({
+                "success": False,
+                "error": result.get("error", "알 수 없는 오류")
+            }), 500
+        
+    except Exception as e:
+        logger.error(f"❌ Gemini 채팅 오류: {str(e)}")
+        return jsonify({"error": f"Gemini chat failed: {str(e)}"}), 500
+
+@app.route("/chat/gemini/clear", methods=["POST"])
+def clear_gemini_conversation():
+    """Gemini 대화 히스토리 초기화"""
+    logger.info("🗑️ Gemini 대화 히스토리 초기화 요청")
+    try:
+        initialize_services()
+        
+        if gemini_service:
+            gemini_service.clear_conversation()
+            logger.info("✅ Gemini 대화 히스토리 초기화 완료")
+            return jsonify({"success": True, "message": "대화 히스토리가 초기화되었습니다"})
+        else:
+            return jsonify({"error": "Gemini 서비스가 초기화되지 않았습니다"}), 500
+        
+    except Exception as e:
+        logger.error(f"❌ Gemini 대화 초기화 오류: {str(e)}")
+        return jsonify({"error": f"Clear conversation failed: {str(e)}"}), 500
+
+@app.route("/chat/gemini/status", methods=["GET"])
+def get_gemini_status():
+    """Gemini 서비스 상태 확인"""
+    logger.info("🔍 Gemini 서비스 상태 확인")
+    try:
+        initialize_services()
+        
+        is_available = gemini_service.is_available() if gemini_service else False
+        
+        return jsonify({
+            "available": is_available,
+            "api_key_configured": bool(gemini_service.api_key if gemini_service else None)
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Gemini 상태 확인 오류: {str(e)}")
+        return jsonify({"error": f"Status check failed: {str(e)}"}), 500
+
 @app.route('/test_mock', methods=['GET'])
 def test_mock():
     """모킹 데이터 테스트 API"""
@@ -496,7 +578,8 @@ def test_mock():
             'vad_fusion_service': vad_fusion_service.get_mock_result(),
             'cbt_strategy_service': cbt_strategy_service.get_mock_result(),
             'gpt_service': gpt_service.get_mock_result(),
-            'pdf_service': pdf_service.get_mock_result()
+            'pdf_service': pdf_service.get_mock_result(),
+            'gemini_service': gemini_service.get_mock_result()
         }
         logger.info("✅ 모킹 데이터 테스트 완료")
         return jsonify(result)
@@ -514,6 +597,9 @@ if __name__ == '__main__':
     logger.info("   - POST /analyze_text_emotion: 텍스트 감정 분석")
     logger.info("   - GET /health: 서버 상태 확인")
     logger.info("   - GET /test_mock: 모킹 데이터 테스트")
+    logger.info("   - POST /chat/gemini: Gemini AI 채팅")
+    logger.info("   - POST /chat/gemini/clear: 대화 히스토리 초기화")
+    logger.info("   - GET /chat/gemini/status: Gemini 서비스 상태")
     
     initialize_services()
     app.run(host='0.0.0.0', port=5001, debug=True) 

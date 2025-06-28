@@ -9,7 +9,7 @@ class GeminiQuestionService:
         self.api_key = api_key or os.getenv('GEMINI_API_KEY')
         if self.api_key:
             genai.configure(api_key=self.api_key)
-            self.model = genai.GenerativeModel('gemini-pro')
+            self.model = genai.GenerativeModel('gemini-2.5-flash')
         else:
             self.model = None
         
@@ -102,7 +102,7 @@ class GeminiQuestionService:
             return {
                 'success': True,
                 'question': question,
-                'model': 'gemini-pro',
+                'model': 'gemini-2.5-flash',
                 'conversation_length': len(conversation_history),
                 'emotion_tag': emotion_tag
             }
@@ -174,4 +174,76 @@ class GeminiQuestionService:
             'model': 'mock',
             'conversation_length': 0,
             'emotion_tag': 'neutral'
-        } 
+        }
+    
+    def get_response(self, user_message: str, conversation_history: List[Dict] = None) -> Dict:
+        """사용자 메시지에 대한 응답 생성 (채팅용)"""
+        try:
+            if not self.model:
+                return self.get_mock_chat_response(user_message, conversation_history)
+            
+            # 대화 히스토리 구성
+            history_text = ""
+            if conversation_history:
+                history_text = self.build_conversation_history(conversation_history)
+            
+            # 프롬프트 구성
+            prompt = f"""
+당신은 감정 관리 전문가입니다. 사용자의 메시지에 대해 공감적이고 도움이 되는 응답을 해주세요.
+
+{history_text}
+
+사용자: {user_message}
+
+전문가:
+"""
+            
+            # Gemini API 호출
+            response = self.model.generate_content(prompt)
+            
+            return {
+                'success': True,
+                'response': response.text.strip(),
+                'model': 'gemini-2.5-flash'
+            }
+            
+        except Exception as e:
+            print(f"Gemini chat error: {e}")
+            return self.get_mock_chat_response(user_message, conversation_history)
+    
+    def get_mock_chat_response(self, user_message: str, conversation_history: List[Dict] = None) -> Dict:
+        """모킹 채팅 응답 생성"""
+        mock_responses = [
+            "네, 말씀해주세요. 듣고 있습니다.",
+            "그런 감정을 느끼시는군요. 더 자세히 이야기해주세요.",
+            "정말 힘드셨겠어요. 어떤 도움이 필요하신가요?",
+            "그런 상황이라면 충분히 이해됩니다. 어떻게 도와드릴까요?",
+            "감정을 표현해주셔서 고맙습니다. 더 이야기해주세요.",
+            "그런 생각을 하시는군요. 다른 관점에서도 생각해보셨나요?",
+            "정말 중요한 이야기네요. 어떻게 해결하고 싶으신가요?",
+            "그런 경험을 하셨군요. 지금은 어떤 기분이신가요?",
+            "충분히 공감됩니다. 앞으로는 어떻게 하고 싶으신가요?",
+            "그런 감정은 자연스러운 것입니다. 자신을 너무 탓하지 마세요."
+        ]
+        
+        # 메시지 길이에 따라 응답 선택
+        response_index = len(user_message) % len(mock_responses)
+        response = mock_responses[response_index]
+        
+        return {
+            'success': True,
+            'response': response,
+            'model': 'mock'
+        }
+    
+    def get_conversation_history(self) -> List[Dict]:
+        """대화 히스토리 반환 (현재는 빈 리스트)"""
+        return []
+    
+    def clear_conversation(self):
+        """대화 히스토리 초기화"""
+        pass
+    
+    def is_available(self) -> bool:
+        """서비스 사용 가능 여부 확인"""
+        return self.model is not None 
