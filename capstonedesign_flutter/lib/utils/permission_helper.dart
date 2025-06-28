@@ -28,21 +28,38 @@ class PermissionHelper {
         // 권한 요청 전에 잠시 대기
         await Future.delayed(const Duration(seconds: 1));
         
-        // 직접 권한 요청
-        final result = await Permission.camera.request();
-        print('📱 카메라 권한 요청 결과: $result');
+        // iOS에서 권한 요청이 작동하지 않을 수 있으므로 여러 번 시도
+        PermissionStatus result = PermissionStatus.denied;
+        int retryCount = 0;
+        const maxRetries = 3;
         
-        if (result.isGranted) {
-          return true;
+        while (result.isDenied && retryCount < maxRetries) {
+          print('📱 카메라 권한 요청 시도 ${retryCount + 1}/$maxRetries');
+          
+          // 직접 권한 요청
+          result = await Permission.camera.request();
+          print('📱 카메라 권한 요청 결과: $result');
+          
+          if (result.isGranted) {
+            print('✅ 카메라 권한 허용됨');
+            return true;
+          }
+          
+          if (result.isDenied && retryCount < maxRetries - 1) {
+            print('⚠️ 카메라 권한 요청 실패, 잠시 후 재시도');
+            await Future.delayed(const Duration(seconds: 2));
+          }
+          
+          retryCount++;
         }
         
-        // 권한이 여전히 거부된 경우 설정 안내
+        // 모든 시도 후에도 권한이 거부된 경우
         if (!result.isGranted) {
-          print('❌ 카메라 권한이 여전히 거부됨, 설정으로 이동 안내');
+          print('❌ 카메라 권한 요청 실패, 설정으로 이동 안내');
           await _showCameraSettingsDialog(context);
         }
         
-        return false;
+        return result.isGranted;
       } 
       
       // 영구 거부된 경우
@@ -222,9 +239,11 @@ class PermissionHelper {
         children: [
           const Icon(Icons.check_circle, color: Colors.green, size: 16),
           const SizedBox(width: 8),
-          Text(
-            text,
-            style: const TextStyle(fontSize: 13),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontSize: 13),
+            ),
           ),
         ],
       ),

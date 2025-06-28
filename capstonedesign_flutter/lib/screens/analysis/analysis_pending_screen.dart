@@ -97,7 +97,7 @@ class _AnalysisPendingScreenState extends State<AnalysisPendingScreen>
     // 즉시 분석 수행
     if (mounted) {
       setState(() {
-        _statusMessage = 'VAD 데이터 분석 중... ✨';
+        _statusMessage = 'VAD 데이터 분석 중...';
       });
     }
     
@@ -105,7 +105,7 @@ class _AnalysisPendingScreenState extends State<AnalysisPendingScreen>
     
     if (mounted) {
       setState(() {
-        _statusMessage = '감정 패턴 분석 중... 🌟';
+        _statusMessage = '감정 패턴 분석 중...';
       });
     }
     
@@ -113,7 +113,7 @@ class _AnalysisPendingScreenState extends State<AnalysisPendingScreen>
     
     if (mounted) {
       setState(() {
-        _statusMessage = 'CBT 피드백 생성 중... 💫';
+        _statusMessage = 'CBT 피드백 생성 중...';
       });
     }
     
@@ -121,7 +121,8 @@ class _AnalysisPendingScreenState extends State<AnalysisPendingScreen>
     
     if (mounted) {
       setState(() {
-        _statusMessage = '분석 완료! 🎉';
+        _statusMessage = '분석 완료!';
+        _isAnalyzing = false;
       });
     }
     
@@ -166,76 +167,80 @@ class _AnalysisPendingScreenState extends State<AnalysisPendingScreen>
         ),
         child: SafeArea(
           child: Padding(
-            padding: const EdgeInsets.all(24.0),
+            padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 24.0),
             child: Column(
               children: [
-                const Spacer(),
+                const SizedBox(height: 20),
                 
-                // 스파클 효과 배경
-                Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    // 배경 스파클들
-                    ...List.generate(8, (index) => _buildSparkle(index)),
-                    
-                    // 메인 아이콘과 애니메이션
-                    AnimatedBuilder(
-                      animation: Listenable.merge([_pulseAnimation, _glowAnimation]),
-                      builder: (context, child) {
-                        return Transform.scale(
-                          scale: _pulseAnimation.value,
-                          child: Container(
-                            width: 120,
-                            height: 120,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              gradient: const LinearGradient(
-                                colors: [Colors.white, Color(0xFFf8f9ff)],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.white.withOpacity(_glowAnimation.value * 0.3),
-                                  blurRadius: 30,
-                                  spreadRadius: 5,
+                // 메인 아이콘과 애니메이션
+                SizedBox(
+                  width: 160,
+                  height: 160,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // 배경 스파클들
+                      ...List.generate(8, (index) => _buildSparkle(index)),
+                      
+                      // 메인 아이콘
+                      AnimatedBuilder(
+                        animation: Listenable.merge([_pulseAnimation, _glowAnimation]),
+                        builder: (context, child) {
+                          return Transform.scale(
+                            scale: _pulseAnimation.value,
+                            child: Container(
+                              width: 100,
+                              height: 100,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: const LinearGradient(
+                                  colors: [Colors.white, Color(0xFFf8f9ff)],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
                                 ),
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.2),
-                                  blurRadius: 20,
-                                  offset: const Offset(0, 10),
-                                ),
-                              ],
-                            ),
-                            child: AnimatedBuilder(
-                              animation: _rotateAnimation,
-                              builder: (context, child) {
-                                return Transform.rotate(
-                                  angle: _rotateAnimation.value * 2 * math.pi,
-                                  child: const Icon(
-                                    Icons.psychology,
-                                    size: 60,
-                                    color: Color(0xFF667eea),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.white.withOpacity(_glowAnimation.value * 0.3),
+                                    blurRadius: 25,
+                                    spreadRadius: 4,
                                   ),
-                                );
-                              },
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.2),
+                                    blurRadius: 15,
+                                    offset: const Offset(0, 8),
+                                  ),
+                                ],
+                              ),
+                              child: AnimatedBuilder(
+                                animation: _rotateAnimation,
+                                builder: (context, child) {
+                                  return Transform.rotate(
+                                    angle: _rotateAnimation.value * 2 * math.pi,
+                                    child: const Icon(
+                                      Icons.psychology,
+                                      size: 50,
+                                      color: Color(0xFF667eea),
+                                    ),
+                                  );
+                                },
+                              ),
                             ),
-                          ),
-                        );
-                      },
-                    ),
-                  ],
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ),
                 
-                const SizedBox(height: 40),
+                const SizedBox(height: 32),
                 
                 // 제목
                 const Text(
-                  'AI가 당신의 감정을\n분석하고 있어요 ✨',
+                  'AI가 당신의 감정을\n분석하고 있어요',
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 28,
+                    fontSize: 24,
                     fontWeight: FontWeight.w800,
                     height: 1.3,
                     letterSpacing: -0.5,
@@ -246,10 +251,10 @@ class _AnalysisPendingScreenState extends State<AnalysisPendingScreen>
                 
                 // 부제목
                 Text(
-                  '마법 같은 AI가 당신의 마음을 읽고 있어요',
+                  '음성, 표정, 텍스트를 종합하여 정확한 감정을 분석합니다',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.8),
+                    color: Colors.white.withOpacity(0.9),
                     fontSize: 14,
                     fontWeight: FontWeight.w400,
                     fontStyle: FontStyle.italic,
@@ -266,7 +271,7 @@ class _AnalysisPendingScreenState extends State<AnalysisPendingScreen>
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(25),
+                        borderRadius: BorderRadius.circular(20),
                         border: Border.all(
                           color: Colors.white.withOpacity(0.2),
                           width: 1,
@@ -274,8 +279,8 @@ class _AnalysisPendingScreenState extends State<AnalysisPendingScreen>
                         boxShadow: [
                           BoxShadow(
                             color: Colors.white.withOpacity(_sparkleAnimation.value * 0.2),
-                            blurRadius: 10,
-                            spreadRadius: 2,
+                            blurRadius: 8,
+                            spreadRadius: 1,
                           ),
                         ],
                       ),
@@ -294,8 +299,8 @@ class _AnalysisPendingScreenState extends State<AnalysisPendingScreen>
                                   boxShadow: [
                                     BoxShadow(
                                       color: Colors.white.withOpacity(_sparkleAnimation.value),
-                                      blurRadius: 8,
-                                      spreadRadius: 2,
+                                      blurRadius: 6,
+                                      spreadRadius: 1,
                                     ),
                                   ],
                                 ),
@@ -305,9 +310,9 @@ class _AnalysisPendingScreenState extends State<AnalysisPendingScreen>
                           const SizedBox(width: 12),
                           Text(
                             _statusMessage,
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.9),
-                              fontSize: 16,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -317,7 +322,7 @@ class _AnalysisPendingScreenState extends State<AnalysisPendingScreen>
                   },
                 ),
                 
-                const SizedBox(height: 40),
+                const SizedBox(height: 32),
                 
                 // 진행 바
                 Container(
@@ -339,7 +344,7 @@ class _AnalysisPendingScreenState extends State<AnalysisPendingScreen>
                         animation: _sparkleAnimation,
                         builder: (context, child) {
                           return Positioned(
-                            left: _sparkleAnimation.value * MediaQuery.of(context).size.width * 0.8,
+                            left: _sparkleAnimation.value * (MediaQuery.of(context).size.width - 40) * 0.85,
                             top: 0,
                             child: Container(
                               width: 6,
@@ -350,8 +355,8 @@ class _AnalysisPendingScreenState extends State<AnalysisPendingScreen>
                                 boxShadow: [
                                   BoxShadow(
                                     color: Colors.white.withOpacity(_sparkleAnimation.value),
-                                    blurRadius: 8,
-                                    spreadRadius: 2,
+                                    blurRadius: 6,
+                                    spreadRadius: 1,
                                   ),
                                 ],
                               ),
@@ -363,16 +368,16 @@ class _AnalysisPendingScreenState extends State<AnalysisPendingScreen>
                   ),
                 ),
                 
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
                 
                 // 진행 상태 텍스트
                 AnimatedBuilder(
                   animation: _sparkleAnimation,
                   builder: (context, child) {
                     return Text(
-                      'AI가 당신의 마음을 읽는 중...',
+                      _isAnalyzing ? '잠시만 기다려주세요...' : '분석이 완료되었습니다!',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.7 + _sparkleAnimation.value * 0.3),
+                        color: Colors.white.withOpacity(0.8 + _sparkleAnimation.value * 0.2),
                         fontSize: 12,
                         fontWeight: FontWeight.w400,
                         fontStyle: FontStyle.italic,
@@ -383,50 +388,51 @@ class _AnalysisPendingScreenState extends State<AnalysisPendingScreen>
                 
                 const Spacer(),
                 
-                // 홈으로 돌아가기 버튼
-                Container(
-                  width: double.infinity,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Colors.white, Color(0xFFf8f9ff)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 10,
-                        offset: const Offset(0, 5),
+                // 홈으로 돌아가기 버튼 (분석 완료 후에만 표시)
+                if (!_isAnalyzing) ...[
+                  Container(
+                    width: double.infinity,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Colors.white, Color(0xFFf8f9ff)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                    ],
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(16),
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(builder: (context) => const HomeScreen()),
-                          
-                        );
-                      },
-                      child: const Center(
-                        child: Text(
-                          '홈으로 돌아가기',
-                          style: TextStyle(
-                            color: Color(0xFF667eea),
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 8,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(builder: (context) => const HomeScreen()),
+                          );
+                        },
+                        child: const Center(
+                          child: Text(
+                            '홈으로 돌아가기',
+                            style: TextStyle(
+                              color: Color(0xFF667eea),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ),
                     ),
                   ),
-                ),
-                
-                const SizedBox(height: 20),
+                  
+                  const SizedBox(height: 16),
+                ],
               ],
             ),
           ),
@@ -440,25 +446,25 @@ class _AnalysisPendingScreenState extends State<AnalysisPendingScreen>
       animation: _sparkleController,
       builder: (context, child) {
         final angle = (index * 45) * (math.pi / 180);
-        final radius = 80.0;
+        final radius = 70.0;
         final x = math.cos(angle) * radius;
         final y = math.sin(angle) * radius;
         
         return Positioned(
-          left: 60 + x,
-          top: 60 + y,
+          left: 80 + x,
+          top: 80 + y,
           child: Transform.rotate(
             angle: _sparkleController.value * 2 * math.pi,
             child: Container(
-              width: 4,
-              height: 4,
+              width: 3,
+              height: 3,
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.6),
                 shape: BoxShape.circle,
                 boxShadow: [
                   BoxShadow(
                     color: Colors.white.withOpacity(_sparkleAnimation.value * 0.5),
-                    blurRadius: 4,
+                    blurRadius: 3,
                     spreadRadius: 1,
                   ),
                 ],
