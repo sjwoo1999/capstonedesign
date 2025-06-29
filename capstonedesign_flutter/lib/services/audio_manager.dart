@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:record/record.dart';
 import 'dart:io';
+import 'package:path_provider/path_provider.dart';
 
 /// 오디오 관리자 - 마이크 충돌 방지
 class AudioManager {
@@ -19,6 +20,7 @@ class AudioManager {
   final Record _audioRecorder = Record();
   bool _isRecording = false;
   String? _currentRecordingPath;
+  DateTime? _recordingStartTime;
   
   // 상태 관리
   bool _isInitialized = false;
@@ -82,60 +84,122 @@ class AudioManager {
     }
   }
 
-  /// 멀티모달 분석을 위한 녹음 시작
-  Future<bool> startRecording() async {
-    if (!_isInitialized) {
-      await initialize();
-    }
-    
-    if (_isRecording) {
-      await stopRecording();
-    }
-    
+  /// 오디오 권한 확인
+  Future<bool> _checkPermissions() async {
     try {
-      // 임시 파일 경로 생성
-      final tempDir = Directory.systemTemp;
-      _currentRecordingPath = '${tempDir.path}/audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
-      
-      // 녹음 시작
-      await _audioRecorder.start(
-        path: _currentRecordingPath,
-        encoder: AudioEncoder.aacLc,
-        bitRate: 128000,
-        samplingRate: 44100,
-      );
-      
-      _isRecording = true;
-      print('🎤 멀티모달 녹음 시작: $_currentRecordingPath');
-      
-      return true;
-      
+      final hasPermission = await _audioRecorder.hasPermission();
+      print('🔐 [AudioManager] 오디오 권한 상태: $hasPermission');
+      return hasPermission;
     } catch (e) {
-      onError?.call('녹음 시작 실패: $e');
+      print('❌ [AudioManager] 권한 확인 실패: $e');
       return false;
     }
   }
 
-  /// 현재 오디오 데이터를 base64로 반환
+  /// 오디오 녹음 시작
+  Future<void> startRecording() async {
+    try {
+      print('🎤 [AudioManager] 녹음 시작 시도');
+      
+      if (_isRecording) {
+        print('⚠️ [AudioManager] 이미 녹음 중입니다');
+        return;
+      }
+
+      // 권한 확인
+      final hasPermission = await _checkPermissions();
+      if (!hasPermission) {
+        print('❌ [AudioManager] 오디오 권한이 없습니다');
+        throw Exception('오디오 권한이 필요합니다');
+      }
+
+      print('✅ [AudioManager] 오디오 권한 확인 완료');
+
+      // 녹음 파일 경로 설정
+      final directory = await getTemporaryDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      _currentRecordingPath = '${directory.path}/audio_$timestamp.m4a';
+      
+      print('📁 [AudioManager] 녹음 파일 경로: $_currentRecordingPath');
+
+      // 녹음 설정
+      final recorder = Record();
+      
+      // 녹음 시작
+      await recorder.start(
+        path: _currentRecordingPath,
+        encoder: AudioEncoder.aacLc,
+        bitRate: 128000,
+        samplingRate: 44100,
+        numChannels: 2,
+      );
+
+      _isRecording = true;
+      _recordingStartTime = DateTime.now();
+      
+      print('✅ [AudioManager] 녹음 시작 완료');
+      print('📊 [AudioManager] 녹음 설정:');
+      print('   - 인코더: AAC LC');
+      print('   - 비트레이트: 128kbps');
+      print('   - 샘플링 레이트: 44.1kHz');
+      print('   - 채널: 2 (스테레오)');
+      print('   - 시작 시간: $_recordingStartTime');
+
+    } catch (e) {
+      print('❌ [AudioManager] 녹음 시작 실패: $e');
+      _isRecording = false;
+      rethrow;
+    }
+  }
+
+  /// 현재 녹음된 오디오 데이터를 Base64로 반환
   Future<String?> getCurrentAudioData() async {
-    if (!_isRecording || _currentRecordingPath == null) {
+    try {
+      print('🎤 [AudioManager] 현재 오디오 데이터 수집 시도');
+      
+      if (!_isRecording || _currentRecordingPath == null) {
+        print('⚠️ [AudioManager] 녹음 중이 아니거나 파일 경로가 없습니다');
+        return null;
+      }
+
+      // 녹음 중지 (임시로)
+      await stopRecording();
+      print('⏹️ [AudioManager] 분석을 위해 녹음 일시 중지');
+
+      // 파일 존재 확인
+      final file = File(_currentRecordingPath!);
+      if (!await file.exists()) {
+        print('❌ [AudioManager] 녹음 파일이 존재하지 않습니다: $_currentRecordingPath');
+        return null;
+      }
+
+      // 파일 크기 확인
+      final fileSize = await file.length();
+      print('📊 [AudioManager] 녹음 파일 크기: $fileSize bytes');
+      
+      if (fileSize < 1000) {
+        print('⚠️ [AudioManager] 녹음 파일이 너무 작습니다 (${fileSize} bytes)');
+        print('💡 [AudioManager] 최소 1초 이상 녹음이 필요합니다');
+      }
+
+      // 파일을 Base64로 인코딩
+      final bytes = await file.readAsBytes();
+      final base64Audio = base64Encode(bytes);
+      
+      print('✅ [AudioManager] 오디오 데이터 수집 완료');
+      print('📊 [AudioManager] Base64 데이터 크기: ${base64Audio.length} bytes');
+      print('📊 [AudioManager] 녹음 시간: ${_recordingStartTime != null ? DateTime.now().difference(_recordingStartTime!).inSeconds : 0}초');
+
+      // 녹음 재시작
+      await startRecording();
+      print('🔄 [AudioManager] 분석 후 녹음 재시작');
+
+      return base64Audio;
+
+    } catch (e) {
+      print('❌ [AudioManager] 오디오 데이터 수집 실패: $e');
       return null;
     }
-    
-    try {
-      // 현재 녹음 중인 파일 읽기
-      final file = File(_currentRecordingPath!);
-      if (await file.exists()) {
-        final bytes = await file.readAsBytes();
-        final base64Data = base64Encode(bytes);
-        print('🎤 오디오 데이터 수집: ${base64Data.length} bytes');
-        return base64Data;
-      }
-    } catch (e) {
-      print('❌ 오디오 데이터 수집 실패: $e');
-    }
-    
-    return null;
   }
 
   /// 녹음 중지

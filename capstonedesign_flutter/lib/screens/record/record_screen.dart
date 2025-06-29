@@ -79,6 +79,7 @@ class _RecordScreenState extends State<RecordScreen> {
         selectedCamera = cameras.first;
       }
 
+      // 전면 카메라에 최적화된 해상도 설정
       _controller = CameraController(selectedCamera, ResolutionPreset.medium);
       await _controller!.initialize();
       
@@ -274,30 +275,69 @@ class _RecordScreenState extends State<RecordScreen> {
 
   Widget _buildCameraView() {
     return Column(
-              children: [
-                Expanded(
-                  flex: 6,
-                  child: AspectRatio(
-                    aspectRatio: _controller!.value.aspectRatio,
-                    child: CameraPreview(_controller!),
-                  ),
-                ),
-                Expanded(
-                  flex: 2,
-                  child: Center(
-                    child: ElevatedButton.icon(
-                      onPressed: _endSession,
-                      icon: const Icon(Icons.stop),
-                      label: const Text('분석 종료'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.redAccent,
-                        foregroundColor: Colors.white,
-                        minimumSize: const Size(180, 50),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+      children: [
+        Expanded(
+          flex: 6,
+          child: _buildOptimizedCameraPreview(),
+        ),
+        Expanded(
+          flex: 2,
+          child: Center(
+            child: ElevatedButton.icon(
+              onPressed: _endSession,
+              icon: const Icon(Icons.stop),
+              label: const Text('분석 종료'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.redAccent,
+                foregroundColor: Colors.white,
+                minimumSize: const Size(180, 50),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
+  }
+
+  /// 최적화된 카메라 프리뷰 (왜곡 최소화)
+  Widget _buildOptimizedCameraPreview() {
+    if (_controller == null || !_controller!.value.isInitialized) {
+      return Container(
+        color: Colors.grey[800],
+        child: const Center(
+          child: CircularProgressIndicator(
+            color: Colors.white,
+            strokeWidth: 2,
+          ),
+        ),
+      );
+    }
+    
+    // 전면 카메라 여부 확인
+    final isFrontCamera = _controller!.description.lensDirection == CameraLensDirection.front;
+    
+    // 중앙 크롭 + 비율 유지로 왜곡 최소화
+    Widget cameraWidget = ClipRect(
+      child: Align(
+        alignment: Alignment.center,
+        widthFactor: 0.7, // 중앙 70%만 사용 (왜곡이 심한 가장자리 제거)
+        heightFactor: 0.7,
+        child: AspectRatio(
+          aspectRatio: _controller!.value.aspectRatio,
+          child: CameraPreview(_controller!),
+        ),
+      ),
+    );
+    
+    // 전면 카메라일 때만 미러링 적용 (좌우반전)
+    if (isFrontCamera) {
+      cameraWidget = Transform(
+        alignment: Alignment.center,
+        transform: Matrix4.identity()..scale(-1.0, 1.0, 1.0),
+        child: cameraWidget,
+      );
+    }
+    
+    return cameraWidget;
   }
 }

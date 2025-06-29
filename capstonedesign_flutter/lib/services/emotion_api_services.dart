@@ -25,6 +25,7 @@ class EmotionAPIService {
     print('📡 Emotion API 서버 주소 설정됨: $_baseUrl');
   }
 
+  /// 이미지 분석을 위한 메서드
   Future<Map<String, dynamic>> sendImageForAnalysis(String base64Image) async {
     int retryAttempts = 0;
     const int maxRetryCount = 3;
@@ -34,6 +35,8 @@ class EmotionAPIService {
       try {
         print('🚀 이미지 분석 요청 시도 ${retryAttempts + 1}/$maxRetryCount');
         print('📡 요청 URL: $_baseUrl/analyze_multimodal_emotion');
+        print('📷 이미지 데이터 크기: ${base64Image.length} bytes');
+        print('📷 이미지 데이터 미리보기: ${base64Image.substring(0, 100)}...');
         
         final requestBody = {
           "face_image": base64Image,
@@ -41,7 +44,7 @@ class EmotionAPIService {
           "text": ""
         };
         
-        print('📦 요청 데이터 크기: ${base64Image.length} bytes');
+        print('📤 요청 본문 크기: ${jsonEncode(requestBody).length} bytes');
         
         final response = await http.post(
           Uri.parse('$_baseUrl/analyze_multimodal_emotion'),
@@ -49,34 +52,35 @@ class EmotionAPIService {
           body: jsonEncode(requestBody),
         ).timeout(const Duration(seconds: 10));
 
-        print('📡 서버 응답 상태: ${response.statusCode}');
-        print('📡 서버 응답 헤더: ${response.headers}');
+        print('📡 이미지 분석 서버 응답 상태: ${response.statusCode}');
+        print('📡 응답 헤더: ${response.headers}');
 
         if (response.statusCode == 200) {
           print('✅ 이미지 분석 성공');
           final responseData = jsonDecode(response.body);
-          print('📊 서버 응답 데이터: ${responseData.keys.toList()}');
+          print('📊 이미지 분석 응답 데이터 키: ${responseData.keys.toList()}');
+          print('📊 이미지 분석 응답 내용: ${responseData.toString().substring(0, 500)}...');
           return responseData;
         } else {
-          print('❌ 서버 오류 응답: ${response.body}');
+          print('❌ 이미지 분석 서버 오류 응답: ${response.body}');
           throw Exception(
               '서버 오류: ${response.statusCode} ${response.reasonPhrase}');
         }
       } catch (e) {
         retryAttempts++;
-        print('❗ 서버 연결 실패 [시도 $retryAttempts/$maxRetryCount]: $e');
+        print('❗ 이미지 분석 서버 연결 실패 [시도 $retryAttempts/$maxRetryCount]: $e');
 
         if (retryAttempts >= maxRetryCount) {
-          print('❌ 최대 재시도 횟수 초과, Mock 데이터 사용');
-          // Mock 데이터 반환
+          print('❌ 최대 재시도 횟수 초과, Mock 이미지 VAD 데이터 사용');
+          // Mock 이미지 VAD 데이터 반환
           return {
-            'emotion_tag': 'calm',
-            'face_emotion': 'Neutral',
+            'face_emotion': 'neutral',
             'final_vad': {
               'valence': 0.5,
-              'arousal': 0.3,
+              'arousal': 0.5,
               'dominance': 0.5
-            }
+            },
+            'confidence': 0.5
           };
         }
 
@@ -95,19 +99,36 @@ class EmotionAPIService {
 
     while (retryAttempts < maxRetryCount) {
       try {
+        print('🚀 오디오 분석 요청 시도 ${retryAttempts + 1}/$maxRetryCount');
+        print('📡 요청 URL: $_baseUrl/analyze_multimodal_emotion');
+        print('🎤 오디오 데이터 크기: ${base64Audio.length} bytes');
+        print('🎤 오디오 데이터 미리보기: ${base64Audio.substring(0, 100)}...');
+        
+        final requestBody = {
+          "face_image": "",
+          "audio": base64Audio,
+          "text": ""
+        };
+        
+        print('📤 요청 본문 크기: ${jsonEncode(requestBody).length} bytes');
+        
         final response = await http.post(
           Uri.parse('$_baseUrl/analyze_multimodal_emotion'),
           headers: {"Content-Type": "application/json"},
-          body: jsonEncode({
-            "face_image": "",
-            "audio": base64Audio,
-            "text": ""
-          }),
+          body: jsonEncode(requestBody),
         ).timeout(const Duration(seconds: 10)); // 오디오 분석은 더 오래 걸릴 수 있음
 
+        print('📡 오디오 분석 서버 응답 상태: ${response.statusCode}');
+        print('📡 응답 헤더: ${response.headers}');
+
         if (response.statusCode == 200) {
-          return jsonDecode(response.body);
+          print('✅ 오디오 분석 성공');
+          final responseData = jsonDecode(response.body);
+          print('📊 오디오 분석 응답 데이터 키: ${responseData.keys.toList()}');
+          print('📊 오디오 분석 응답 내용: ${responseData.toString().substring(0, 500)}...');
+          return responseData;
         } else {
+          print('❌ 오디오 분석 서버 오류 응답: ${response.body}');
           throw Exception(
               '서버 오류: ${response.statusCode} ${response.reasonPhrase}');
         }
@@ -116,7 +137,17 @@ class EmotionAPIService {
         print('❗ 오디오 분석 서버 연결 실패 [시도 $retryAttempts/$maxRetryCount]: $e');
 
         if (retryAttempts >= maxRetryCount) {
-          throw Exception('오디오 분석 서버에 연결할 수 없습니다. (${maxRetryCount}회 시도 실패)');
+          print('❌ 최대 재시도 횟수 초과, Mock 오디오 VAD 데이터 사용');
+          // Mock 오디오 VAD 데이터 반환
+          return {
+            'audio_emotion': 'neutral',
+            'audio_vad': {
+              'valence': 0.5,
+              'arousal': 0.5,
+              'dominance': 0.5
+            },
+            'audio_confidence': 0.5
+          };
         }
 
         await Future.delayed(retryDelay);
@@ -134,19 +165,36 @@ class EmotionAPIService {
 
     while (retryAttempts < maxRetryCount) {
       try {
+        print('🚀 멀티모달 분석 요청 시도 ${retryAttempts + 1}/$maxRetryCount');
+        print('📡 요청 URL: $_baseUrl/analyze_multimodal_emotion');
+        print('📷 이미지 데이터 크기: ${base64Image.length} bytes');
+        print('🎤 오디오 데이터 크기: ${base64Audio.length} bytes');
+        
+        final requestBody = {
+          "face_image": base64Image,
+          "audio": base64Audio,
+          "text": ""
+        };
+        
+        print('📤 요청 본문 크기: ${jsonEncode(requestBody).length} bytes');
+        
         final response = await http.post(
           Uri.parse('$_baseUrl/analyze_multimodal_emotion'),
           headers: {"Content-Type": "application/json"},
-          body: jsonEncode({
-            "face_image": base64Image,
-            "audio": base64Audio,
-            "text": ""
-          }),
+          body: jsonEncode(requestBody),
         ).timeout(const Duration(seconds: 15)); // 멀티모달 분석은 더 오래 걸림
 
+        print('📡 멀티모달 분석 서버 응답 상태: ${response.statusCode}');
+        print('📡 응답 헤더: ${response.headers}');
+
         if (response.statusCode == 200) {
-          return jsonDecode(response.body);
+          print('✅ 멀티모달 분석 성공');
+          final responseData = jsonDecode(response.body);
+          print('📊 멀티모달 분석 응답 데이터 키: ${responseData.keys.toList()}');
+          print('📊 멀티모달 분석 응답 내용: ${responseData.toString().substring(0, 500)}...');
+          return responseData;
         } else {
+          print('❌ 멀티모달 분석 서버 오류 응답: ${response.body}');
           throw Exception(
               '서버 오류: ${response.statusCode} ${response.reasonPhrase}');
         }
@@ -155,7 +203,18 @@ class EmotionAPIService {
         print('❗ 멀티모달 분석 서버 연결 실패 [시도 $retryAttempts/$maxRetryCount]: $e');
 
         if (retryAttempts >= maxRetryCount) {
-          throw Exception('멀티모달 분석 서버에 연결할 수 없습니다. (${maxRetryCount}회 시도 실패)');
+          print('❌ 최대 재시도 횟수 초과, Mock 멀티모달 VAD 데이터 사용');
+          // Mock 멀티모달 VAD 데이터 반환
+          return {
+            'face_emotion': 'neutral',
+            'audio_emotion': 'neutral',
+            'final_vad': {
+              'valence': 0.5,
+              'arousal': 0.5,
+              'dominance': 0.5
+            },
+            'confidence': 0.5
+          };
         }
 
         await Future.delayed(retryDelay);

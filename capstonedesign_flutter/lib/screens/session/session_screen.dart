@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:provider/provider.dart';
-import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:device_info_plus/device_info_plus.dart';
 import '../../providers/vad_provider.dart';
 import '../../providers/cbt_provider.dart';
 import '../../theme/bemore_theme.dart';
@@ -12,18 +10,16 @@ import '../analysis/analysis_pending_screen.dart';
 import 'package:timer_builder/timer_builder.dart';
 import 'dart:convert';
 import '../../models/emotion_data_point.dart';
-import 'package:image/image.dart' as img;
 import '../../services/emotion_api_services.dart';
-import '../../services/audio_manager.dart'; // AudioManager 추가
-import '../../utils/permission_helper.dart'; // PermissionHelper 추가
+import '../../services/audio_manager.dart';
+import '../../utils/permission_helper.dart';
 import 'dart:typed_data';
 import 'dart:io';
 import 'dart:math';
 
-
 // 대화 상태를 명확하게 정의
 enum ConversationState {
-  preparing,     // 준비 중 (카메라 초기화)
+  preparing,     // 준비 중 (음성 인식 초기화)
   ready,         // 대화 시작 준비 완료
   talking,       // 대화 중 (실시간 분석)
   ending,        // 대화 종료 중
@@ -41,17 +37,6 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
   String _conversationTopic = '';
   final TextEditingController _topicController = TextEditingController();
   final TextEditingController _noteController = TextEditingController();
-  
-  // 디바이스 정보 관련
-  final DeviceInfoPlugin _deviceInfo = DeviceInfoPlugin();
-  bool _isSimulator = false; // null 대신 기본값 false 사용
-  
-  // 카메라 관련
-  CameraController? _cameraController;
-  bool _isCameraInitialized = false;
-  bool _hasCameraPermission = false;
-  bool _hasMicrophonePermission = false;
-  String _cameraError = '';
 
   // 오디오 관련
   final AudioManager _audioManager = AudioManager();
@@ -60,6 +45,7 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
   String _lastSentText = ''; // 마지막으로 전송된 텍스트 (중복 방지)
   double _currentSoundLevel = 0.0;
   Timer? _textDebounceTimer; // 텍스트 디바운스 타이머
+  bool _hasMicrophonePermission = false;
 
   // API 서비스 (한 번만 초기화)
   late final EmotionAPIService _apiService;
@@ -74,14 +60,9 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
   // 실시간 분석 상태
   bool _isAnalyzing = false;
   String _currentEmotion = '';
-  String _currentFaceEmotion = '';
 
   // 상태 변수들
   bool _isLoading = false;
-
-  // 권한 안내 다이얼로그 중복 방지 플래그
-  bool _cameraSettingsDialogShown = false;
-  bool _micSettingsDialogShown = false;
   bool _isRequestingPermissions = false; // 권한 요청 중 플래그 추가
   bool _hasCheckedPermissions = false; // 초기 권한 확인 완료 플래그 추가
 
@@ -93,15 +74,13 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
   @override
   void initState() {
     super.initState();
-    print('🚀 실시간 대화 화면 초기화 시작');
+    print('🚀 AI 채팅 화면 초기화 시작');
     
     // API 서비스 초기화
     _apiService = EmotionAPIService();
     
     // AudioManager 초기화
     _initializeAudioManager();
-    
-    _initializeDeviceInfo();
     
     WidgetsBinding.instance.addObserver(this); // 라이프사이클 옵저버 등록
     
@@ -127,12 +106,6 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
     // 텍스트 디바운스 타이머 정리
     _textDebounceTimer?.cancel();
     
-    // 카메라 컨트롤러 정리
-    if (_cameraController != null && _cameraController!.value.isStreamingImages) {
-      _cameraController?.stopImageStream();
-    }
-    _cameraController?.dispose();
-    
     // AudioManager 정리
     _audioManager.dispose();
     
@@ -150,12 +123,10 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
   // 권한 상태만 확인 (요청 없음)
   Future<void> _checkPermissionStatusOnly() async {
     try {
-      final cameraStatus = await Permission.camera.status;
       final micStatus = await Permission.microphone.status;
       
       if (mounted) {
         setState(() {
-          _hasCameraPermission = cameraStatus.isGranted;
           _hasMicrophonePermission = micStatus.isGranted;
         });
       }
@@ -164,59 +135,7 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
     }
   }
 
-  // iOS에서 권한 인식을 위한 카메라 프리뷰 강제 활성화
-  Future<void> _forceCameraPreviewForPermission() async {
-    if (_isSimulator || _cameraController == null || !_cameraController!.value.isInitialized) {
-      return;
-    }
-    
-    try {
-      print('📷 iOS 권한 인식을 위한 카메라 프리뷰 강제 활성화');
-      
-      // 카메라 스트림 시작
-      await _cameraController!.startImageStream((image) {
-        // 권한 인식 목적이므로 실제 처리는 하지 않음
-      });
-      
-      // 3초간 카메라 활성화 유지
-      await Future.delayed(const Duration(seconds: 3));
-      
-      // 카메라 스트림 중지
-      await _cameraController!.stopImageStream();
-      
-      print('📷 카메라 프리뷰 강제 활성화 완료');
-    } catch (e) {
-      print('❌ 카메라 프리뷰 강제 활성화 실패: $e');
-    }
-  }
-
-  // 카메라 재시도 메서드
-  Future<void> _retryCamera() async {
-    print('🔄 카메라 재시도 시작');
-    
-    setState(() {
-      _cameraError = '';
-      _isCameraInitialized = false;
-    });
-    
-    try {
-      // 기존 카메라 컨트롤러 정리
-      await _cameraController?.dispose();
-      _cameraController = null;
-      
-      // 카메라 재초기화
-      await _initializeCameraWithPermissionRequest();
-      
-      print('✅ 카메라 재시도 성공');
-    } catch (e) {
-      print('❌ 카메라 재시도 실패: $e');
-      setState(() {
-        _cameraError = '카메라 재시도 실패: $e';
-        _isCameraInitialized = true;
-      });
-    }
-  }
-
+  // 권한 확인 및 요청
   Future<void> _checkPermissions() async {
     if (_isRequestingPermissions || _hasCheckedPermissions) {
       print('⚠️ 권한 확인 중이거나 이미 확인됨');
@@ -226,165 +145,18 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
     _isRequestingPermissions = true;
     
     try {
-      // iOS에서 권한 요청이 무시되는 문제를 해결하기 위해
-      // 먼저 카메라 초기화를 시도하고, 그 과정에서 권한을 요청
-      if (!_isSimulator) {
-        print('📷 iOS 권한 문제 해결을 위해 카메라 초기화 먼저 시도');
-        await _initializeCameraWithPermissionRequest();
-      }
-      
-      // 마이크 권한 확인
+      // 마이크 권한 확인 및 요청
       _hasMicrophonePermission = await PermissionHelper.requestMicrophonePermission(context);
       
       _hasCheckedPermissions = true;
       
-      // 시뮬레이터 처리
-      if (_isSimulator) {
-        if (mounted) {
-          setState(() {
-            _isCameraInitialized = true;
-            _conversationState = ConversationState.ready;
-          });
-        }
-      } else {
-        if (mounted) {
-          setState(() {
-            _conversationState = ConversationState.ready;
-          });
-        }
+      if (mounted) {
+        setState(() {
+          _conversationState = ConversationState.ready;
+        });
       }
     } finally {
       _isRequestingPermissions = false;
-    }
-  }
-
-  // 카메라 초기화와 권한 요청을 함께 처리
-  Future<void> _initializeCameraWithPermissionRequest() async {
-    try {
-      final cameras = await availableCameras();
-      if (cameras.isEmpty) {
-        print('📱 사용 가능한 카메라가 없습니다');
-        if (mounted) {
-          setState(() {
-            _isCameraInitialized = true;
-            _cameraError = '';
-            _conversationState = ConversationState.ready;
-          });
-        }
-        return;
-      }
-
-      // 전면 카메라 목록 필터링 및 로그 출력
-      final frontCameras = cameras.where((camera) => camera.lensDirection == CameraLensDirection.front).toList();
-      print('📷 사용 가능한 모든 전면 카메라:');
-      for (var cam in frontCameras) {
-        print('  - 이름: \\${cam.name}, 방향: \\${cam.lensDirection}, 해상도: \\${cam.sensorOrientation}');
-      }
-
-      if (frontCameras.isEmpty) {
-        print('❌ 전면 카메라를 찾을 수 없습니다.');
-        if (mounted) {
-          setState(() {
-            _cameraError = '전면 카메라를 찾을 수 없습니다.';
-            _isCameraInitialized = true;
-            _conversationState = ConversationState.ready;
-          });
-        }
-        return;
-      }
-      
-      // 가장 표준적인(일반 화각, wide가 아닌) 전면 카메라 우선 선택
-      CameraDescription selectedCamera = frontCameras.first;
-      if (frontCameras.length > 1) {
-        final standardCamera = frontCameras.firstWhere(
-          (c) => !c.name.toLowerCase().contains('wide'),
-          orElse: () => frontCameras.first,
-        );
-        selectedCamera = standardCamera;
-      }
-      print('📷 선택된 카메라: \\${selectedCamera.name}');
-
-      // 기존 컨트롤러 정리
-      await _cameraController?.dispose();
-      
-      _cameraController = CameraController(
-        selectedCamera,
-        ResolutionPreset.high, // 해상도 명확히 지정
-        enableAudio: false,
-      );
-
-      // 카메라 초기화 시도 (이 과정에서 iOS가 권한을 요청할 수 있음)
-      print('📷 카메라 초기화 시도 중... (권한 요청 포함)');
-      await _cameraController!.initialize();
-      print('✅ 카메라 초기화 성공');
-      
-      // 카메라 권한 상태 확인
-      final cameraStatus = await Permission.camera.status;
-      _hasCameraPermission = cameraStatus.isGranted;
-      
-      if (_hasCameraPermission) {
-        print('✅ 카메라 권한 확인됨');
-        // iOS 권한 인식을 위한 카메라 프리뷰 강제 활성화
-        await _forceCameraPreviewForPermission();
-      } else {
-        print('❌ 카메라 권한이 없음, 권한 요청 다이얼로그 표시');
-        // 권한이 없으면 사용자에게 설명 후 요청
-        _hasCameraPermission = await PermissionHelper.requestCameraPermission(context);
-        
-        if (_hasCameraPermission) {
-          // 권한이 허용되었다면 다시 카메라 프리뷰 활성화
-          await _forceCameraPreviewForPermission();
-        }
-      }
-      
-      if (mounted) {
-        setState(() {
-          _isCameraInitialized = true;
-          _conversationState = ConversationState.ready;
-        });
-      }
-      
-    } catch (e) {
-      print('❌ 카메라 초기화 실패: $e');
-      
-      // 카메라 초기화 실패 시 권한 문제일 수 있으므로 권한 요청
-      if (e.toString().contains('permission') || e.toString().contains('denied')) {
-        print('📱 카메라 권한 문제로 추정, 권한 요청 다이얼로그 표시');
-        _hasCameraPermission = await PermissionHelper.requestCameraPermission(context);
-      }
-      
-      // 카메라 컨트롤러 정리
-      await _cameraController?.dispose();
-      _cameraController = null;
-      
-      if (mounted) {
-        setState(() {
-          _cameraError = '카메라 초기화 실패: $e';
-          _isCameraInitialized = true;
-          _conversationState = ConversationState.ready;
-        });
-      }
-    }
-  }
-
-  // 디바이스 정보 초기화 (시뮬레이터 감지)
-  Future<void> _initializeDeviceInfo() async {
-    try {
-      if (Platform.isIOS) {
-        final iosInfo = await _deviceInfo.iosInfo;
-        _isSimulator = !iosInfo.isPhysicalDevice;
-        print('📱 iOS 디바이스 정보: ${iosInfo.name} (시뮬레이터: $_isSimulator)');
-      } else if (Platform.isAndroid) {
-        final androidInfo = await _deviceInfo.androidInfo;
-        _isSimulator = androidInfo.isPhysicalDevice == false;
-        print('📱 Android 디바이스 정보: ${androidInfo.model} (시뮬레이터: $_isSimulator)');
-      } else {
-        _isSimulator = false;
-        print('📱 기타 플랫폼 (시뮬레이터: $_isSimulator)');
-      }
-    } catch (e) {
-      print('❌ 디바이스 정보 초기화 실패: $e');
-      _isSimulator = false; // 기본값으로 실제 디바이스로 간주
     }
   }
 
@@ -396,7 +168,7 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
     }
     
     print('🎤 === 대화 시작 ===');
-    print('📱 카메라 권한: $_hasCameraPermission, 마이크 권한: $_hasMicrophonePermission');
+    print('📱 마이크 권한: $_hasMicrophonePermission');
     
     setState(() {
       _conversationState = ConversationState.talking;
@@ -416,9 +188,8 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
       });
     } else {
       // 카메라와 음성 분석 시작
-      if (_isCameraInitialized && _cameraController != null && _hasCameraPermission) {
-        print('🎤 멀티모달 대화 시작: ${_conversationTopic.isNotEmpty ? _conversationTopic : "자유 대화"}');
-        _startImageAnalysis();
+      if (_hasMicrophonePermission) {
+        print('🎤 음성 분석만으로 대화 시작: ${_conversationTopic.isNotEmpty ? _conversationTopic : "자유 대화"}');
         _startVoiceAnalysis();
       } else {
         print('🎤 음성 분석만으로 대화 시작: ${_conversationTopic.isNotEmpty ? _conversationTopic : "자유 대화"}');
@@ -700,178 +471,12 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
     // AudioManager 중지
     _audioManager.stopAll();
     
-    // 카메라 스트림 중지
-    if (_cameraController != null && _cameraController!.value.isStreamingImages) {
-      _cameraController?.stopImageStream();
-    }
-    
-    // 텍스트 디바운스 타이머 정리
-    _textDebounceTimer?.cancel();
-    
     _conversationEndTime = DateTime.now();
     
     print('🔚 대화 종료, 분석 데이터 (${_sessionData.length}개) 전송 준비');
     
     // 세션 데이터 전송
     _sendSessionData();
-  }
-
-  void _startImageAnalysis() {
-    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
-    
-    // 이미 스트림이 실행 중이면 중지
-    if (_cameraController!.value.isStreamingImages) {
-      print('📷 기존 카메라 스트림 중지...');
-      _cameraController!.stopImageStream();
-    }
-    
-    // 잠시 대기 후 새 스트림 시작
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (_cameraController != null && _cameraController!.value.isInitialized) {
-        print('📷 새 카메라 스트림 시작...');
-        _startImageStream();
-      }
-    });
-  }
-
-  void _startImageStream() {
-    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
-    
-    try {
-      _cameraController!.startImageStream((CameraImage cameraImage) async {
-        // 1초에 한 번씩만 이미지를 처리하도록 제어
-        final now = DateTime.now();
-        if (now.difference(_lastAnalyzedTime) < const Duration(seconds: 1)) {
-          return;
-        }
-        _lastAnalyzedTime = now;
-
-        try {
-          // 분석 시작 상태 업데이트
-          if (mounted) {
-            setState(() {
-              _isAnalyzing = true;
-            });
-          }
-
-          // 1. CameraImage를 일반 이미지(JPEG)로 변환
-          final image = _convertCameraImage(cameraImage);
-          if (image == null) return;
-
-          // 2. 이미지를 Base64 문자열로 인코딩 (품질 조정으로 크기 최적화)
-          final base64Image = base64Encode(img.encodeJpg(image, quality: 85));
-
-          // 3. API 서비스로 전송하여 분석 요청
-          print('🚀 실시간 이미지 분석 요청...');
-          final result = await _apiService.sendImageForAnalysis(base64Image);
-          print('✅ 실시간 분석 완료: ${result['emotion_tag']} (${result['face_emotion']})');
-
-          // 4. 응답 결과를 EmotionDataPoint 모델로 변환
-          final newDataPoint = EmotionDataPoint(
-            timestamp: DateTime.now(),
-            valence: result['final_vad']['valence']?.toDouble() ?? 0.0,
-            arousal: result['final_vad']['arousal']?.toDouble() ?? 0.0,
-            dominance: result['final_vad']['dominance']?.toDouble() ?? 0.0,
-          );
-          
-          _sessionData.add(newDataPoint);
-          print('📊 실시간 VAD 데이터: V=${newDataPoint.valence.toStringAsFixed(2)}, A=${newDataPoint.arousal.toStringAsFixed(2)}, D=${newDataPoint.dominance.toStringAsFixed(2)}');
-
-          // UI 상태 업데이트
-          if (mounted) {
-            setState(() {
-              _isAnalyzing = false;
-              _currentEmotion = result['emotion_tag'] ?? '';
-              _currentFaceEmotion = result['face_emotion'] ?? '';
-            });
-          }
-
-        } catch (e) {
-          print('❌ 실시간 분석 실패: $e');
-          if (mounted) {
-            setState(() {
-              _isAnalyzing = false;
-            });
-          }
-        }
-      });
-    } catch (e) {
-      print('❌ 카메라 스트림 시작 실패: $e');
-    }
-  }
-
-  // CameraImage (YUV420_888 format) to Image (RGB format)
-  img.Image? _convertCameraImage(CameraImage image) {
-    if (image.format.group == ImageFormatGroup.yuv420) {
-      // YUV420 -> RGB 변환 로직 (기존 코드 유지)
-      final int width = image.width;
-      final int height = image.height;
-      final int uvRowStride = image.planes[1].bytesPerRow;
-      final int? uvPixelStride = image.planes[1].bytesPerPixel;
-
-      final yPlane = image.planes[0].bytes;
-      final uPlane = image.planes[1].bytes;
-      final vPlane = image.planes[2].bytes;
-
-      final outImg = img.Image(width: width, height: height);
-
-      for (int y = 0; y < height; y++) {
-        for (int x = 0; x < width; x++) {
-          final int yIndex = y * width + x;
-          final int uvIndex = (y / 2).floor() * uvRowStride + (x / 2).floor() * (uvPixelStride ?? 0);
-          
-          final int yValue = yPlane[yIndex];
-          final int uValue = uPlane[uvIndex];
-          final int vValue = vPlane[uvIndex];
-
-          // ITU-R BT.601 conversion
-          int r = (yValue + 1.402 * (vValue - 128)).round();
-          int g = (yValue - 0.344136 * (uValue - 128) - 0.714136 * (vValue - 128)).round();
-          int b = (yValue + 1.772 * (uValue - 128)).round();
-          
-          r = r.clamp(0, 255);
-          g = g.clamp(0, 255);
-          b = b.clamp(0, 255);
-
-          outImg.setPixelRgba(x, y, r, g, b, 255);
-        }
-      }
-      return img.copyRotate(outImg, angle: 90);
-
-    } else if (image.format.group == ImageFormatGroup.bgra8888) {
-      // BGRA8888 -> RGB 변환 로직 (iOS용)
-      final plane = image.planes[0];
-      return img.Image.fromBytes(
-        width: image.width,
-        height: image.height,
-        bytes: plane.bytes.buffer,
-        order: img.ChannelOrder.bgra,
-      );
-    } else {
-      print('지원하지 않는 이미지 포맷: ${image.format.group}');
-      return null;
-    }
-  }
-
-  // STT 음성 인식 중지
-  Future<void> _stopSTTListening() async {
-    if (_isListening) {
-      setState(() {
-        _isListening = false;
-      });
-      
-      // 디바운스 타이머 정리
-      _textDebounceTimer?.cancel();
-      
-      _audioManager.stopSTT();
-      print('🔇 STT 음성 인식 중지');
-      
-      // 인식된 텍스트가 있고, 아직 전송하지 않은 텍스트인 경우에만 서버로 전송
-      if (_recognizedText.isNotEmpty && _recognizedText != _lastSentText) {
-        await _sendTextToServer(_recognizedText);
-        _lastSentText = _recognizedText;
-      }
-    }
   }
 
   // 인식된 텍스트를 서버로 전송
@@ -933,9 +538,6 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // 카메라 프리뷰
-          _buildCameraPreview(),
-          
           // 권한 상태 표시
           _buildPermissionStatus(),
           
@@ -996,53 +598,6 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
               ),
               const SizedBox(height: 16),
             ],
-            
-            // 카메라 상태 안내
-            if (!_isCameraInitialized || !_hasCameraPermission) ...[
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.mic, color: Colors.white, size: 16),
-                    const SizedBox(width: 8),
-                    Text(
-                      '음성 분석 모드',
-                      style: TextStyle(color: Colors.white, fontSize: 14),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-            ],
-            
-            // 실시간 분석 상태
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: _isAnalyzing ? Colors.green : Colors.grey,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  _isAnalyzing ? '실시간 감정 분석 중...' : '대화를 시작해주세요',
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.9),
-                    fontSize: 16,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
             
             // 음성 레벨 표시
             if (_currentSoundLevel > 0) ...[
@@ -1275,7 +830,7 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
               ),
               if (_currentEmotion.isNotEmpty && !_isAnalyzing && !_isListening)
                 Text(
-                  '${_currentEmotion} (${_currentFaceEmotion})',
+                  '${_currentEmotion}',
                   style: const TextStyle(
                     color: Colors.white70,
                     fontSize: 10,
@@ -1294,186 +849,6 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
             ],
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildCameraPreview() {
-    if (_cameraError.isNotEmpty) {
-      return Container(
-        width: double.infinity,
-        height: double.infinity,
-        color: Colors.black,
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.red.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.red.withOpacity(0.3)),
-                ),
-                child: const Icon(Icons.error_outline, color: Colors.red, size: 60),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                '카메라 오류',
-                style: BeMoreTheme.lightTheme.textTheme.headlineSmall?.copyWith(
-                  color: Colors.red,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Text(
-                  _cameraError,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 16,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              ElevatedButton.icon(
-                onPressed: _retryCamera,
-                icon: const Icon(Icons.refresh),
-                label: const Text('다시 시도'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-    
-    if (!_isCameraInitialized || _cameraController == null || !_cameraController!.value.isInitialized) {
-      return Container(
-        width: double.infinity,
-        height: double.infinity,
-        color: Colors.black,
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                ),
-                child: const CircularProgressIndicator(
-                  color: Colors.blue,
-                  strokeWidth: 3,
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Text(
-                '카메라 초기화 중...',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                '잠시만 기다려주세요',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 14,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    // 시뮬레이터에서 카메라가 없을 때 플레이스홀더 표시
-    if (_isSimulator && _cameraController == null) {
-      return Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.black,
-              Colors.grey.shade900,
-            ],
-          ),
-        ),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.white.withOpacity(0.2)),
-                ),
-                child: const Icon(Icons.camera_alt, size: 80, color: Colors.white54),
-              ),
-              const SizedBox(height: 24),
-              const Text(
-                '시뮬레이터 모드',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 32),
-                child: Text(
-                  '실제 디바이스에서 카메라 기능을 확인하세요',
-                  style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 16,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    // 실제 카메라 프리뷰 - 화면을 꽉 채우도록 개선
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      child: ClipRect(
-        child: OverflowBox(
-          alignment: Alignment.center,
-          maxWidth: double.infinity,
-          maxHeight: double.infinity,
-          child: FittedBox(
-            fit: BoxFit.cover,
-            child: SizedBox(
-              width: _cameraController!.value.previewSize?.width ?? 1,
-              height: _cameraController!.value.previewSize?.height ?? 1,
-              child: CameraPreview(_cameraController!),
-            ),
-          ),
-        ),
       ),
     );
   }
@@ -1531,16 +906,6 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
             ),
             const SizedBox(height: 16),
             
-            // 카메라 권한
-            _buildPermissionItem(
-              icon: _hasCameraPermission ? Icons.camera_alt : Icons.camera_alt_outlined,
-              title: '카메라',
-              isGranted: _hasCameraPermission,
-              description: _hasCameraPermission ? '표정 분석 가능' : '표정 분석 불가',
-            ),
-            
-            const SizedBox(height: 12),
-            
             // 마이크 권한
             _buildPermissionItem(
               icon: _hasMicrophonePermission ? Icons.mic : Icons.mic_off,
@@ -1550,7 +915,7 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
             ),
             
             // 권한이 없는 경우 안내
-            if (!_hasCameraPermission || !_hasMicrophonePermission) ...[
+            if (!_hasMicrophonePermission) ...[
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(12),
@@ -1571,11 +936,7 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
                     const SizedBox(width: 12),
                     Expanded(
                       child: Text(
-                        !_hasCameraPermission && !_hasMicrophonePermission
-                            ? '카메라와 마이크 권한이 필요합니다.\n설정에서 권한을 허용해주세요.'
-                            : !_hasCameraPermission
-                                ? '카메라 권한이 없어도 음성 분석으로 진행 가능합니다.'
-                                : '마이크 권한이 필요합니다.\n설정에서 권한을 허용해주세요.',
+                        '마이크 권한이 필요합니다.\n설정에서 권한을 허용해주세요.',
                         style: TextStyle(
                           color: Colors.orange,
                           fontSize: 13,
@@ -1738,47 +1099,6 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        // 테스트용 더미 텍스트 버튼
-        Container(
-          width: 80,
-          height: 80,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [Color(0xFF2196F3), Color(0xFF1976D2)],
-            ),
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF2196F3).withOpacity(0.3),
-                blurRadius: 15,
-                spreadRadius: 3,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () {
-                // 테스트용 더미 텍스트
-                _processRecognizedText("안녕하세요 오늘 기분이 좋습니다");
-              },
-              borderRadius: BorderRadius.circular(40),
-              child: const Center(
-                child: Icon(
-                  Icons.text_fields,
-                  color: Colors.white,
-                  size: 30,
-                ),
-              ),
-            ),
-          ),
-        ),
-        
-        const SizedBox(width: 24),
-        
         // 대화 종료 버튼
         Container(
           width: 140,
@@ -1852,15 +1172,9 @@ class _SessionScreenState extends State<SessionScreen> with WidgetsBindingObserv
     String guideText = '';
     String subText = '';
     
-    if (!_hasCameraPermission && !_hasMicrophonePermission) {
+    if (!_hasMicrophonePermission) {
       guideText = '권한을 허용한 후 대화를 시작하세요';
-      subText = '카메라와 마이크 권한이 필요합니다';
-    } else if (!_hasCameraPermission) {
-      guideText = '음성 분석으로 대화를 시작할 수 있습니다';
-      subText = '카메라 권한 없이도 음성으로 감정을 분석합니다';
-    } else if (!_hasMicrophonePermission) {
-      guideText = '얼굴 분석으로 대화를 시작할 수 있습니다';
-      subText = '마이크 권한 없이도 표정으로 감정을 분석합니다';
+      subText = '마이크 권한이 필요합니다';
     } else {
       guideText = '버튼을 눌러 대화를 시작하세요';
       subText = '실시간으로 감정을 분석합니다';

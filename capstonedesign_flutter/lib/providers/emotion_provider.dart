@@ -71,17 +71,27 @@ class EmotionProvider with ChangeNotifier {
   // 🆕 멀티모달 데이터 수집 메서드들
   void setImageData(String? base64Image) {
     currentImageData = base64Image;
-    print('📷 이미지 데이터 설정: ${base64Image != null ? "있음" : "없음"}');
+    print('📷 [Provider] 이미지 데이터 설정: ${base64Image != null ? "있음 (${base64Image.length} bytes)" : "없음"}');
+    if (base64Image != null) {
+      print('📷 [Provider] 이미지 데이터 미리보기: ${base64Image.substring(0, 100)}...');
+    }
   }
 
   void setAudioData(String? base64Audio) {
     currentAudioData = base64Audio;
-    print('🎤 오디오 데이터 설정: ${base64Audio != null ? "있음" : "없음"}');
+    print('🎤 [Provider] 오디오 데이터 설정: ${base64Audio != null ? "있음 (${base64Audio.length} bytes)" : "없음"}');
+    if (base64Audio != null) {
+      final previewLength = base64Audio.length < 100 ? base64Audio.length : 100;
+      print('🎤 [Provider] 오디오 데이터 미리보기: ${base64Audio.substring(0, previewLength)}...');
+    }
   }
 
   void setTextData(String? text) {
     currentTextData = text;
-    print('📝 텍스트 데이터 설정: ${text != null ? "있음" : "없음"}');
+    print('📝 [Provider] 텍스트 데이터 설정: ${text != null ? "있음" : "없음"}');
+    if (text != null) {
+      print('📝 [Provider] 텍스트 내용: "$text"');
+    }
   }
 
   // 🆕 멀티모달 분석 실행
@@ -90,7 +100,13 @@ class EmotionProvider with ChangeNotifier {
     Map<String, dynamic>? metadata,
   }) async {
     try {
-      print('🚀 멀티모달 분석 시작');
+      print('🚀 [Provider] 멀티모달 분석 시작');
+      print('📊 [Provider] 현재 수집된 데이터:');
+      print('   - 이미지: ${currentImageData != null ? "있음 (${currentImageData!.length} bytes)" : "없음"}');
+      print('   - 오디오: ${currentAudioData != null ? "있음 (${currentAudioData!.length} bytes)" : "없음"}');
+      print('   - 텍스트: ${currentTextData != null ? "있음" : "없음"}');
+      print('   - 세션 ID: $sessionId');
+      print('   - 메타데이터: $metadata');
       
       // 현재 수집된 데이터로 분석 실행
       final multimodalResult = await _multimodalService.analyzeMultimodal(
@@ -101,6 +117,13 @@ class EmotionProvider with ChangeNotifier {
         metadata: metadata,
       );
 
+      print('✅ [Provider] 멀티모달 분석 완료');
+      print('📊 [Provider] 분석 결과:');
+      print('   - 사용된 모달리티: ${multimodalResult.availableModalities}개');
+      print('   - 최종 감정: ${multimodalResult.finalEmotion}');
+      print('   - 최종 신뢰도: ${multimodalResult.finalConfidence}');
+      print('   - VAD: (${multimodalResult.finalValence}, ${multimodalResult.finalArousal}, ${multimodalResult.finalDominance})');
+
       // EmotionDataPoint로 변환
       final emotionDataPoint = EmotionDataPoint.fromMultimodal(multimodalResult);
 
@@ -108,17 +131,18 @@ class EmotionProvider with ChangeNotifier {
       if (isSessionActive) {
         sessionMultimodalData.add(multimodalResult);
         sessionDataPoints.add(emotionDataPoint);
+        print('💾 [Provider] 세션 데이터에 결과 저장됨');
       }
 
       // 결과 설정
       result = EmotionResult.fromMultimodalData(multimodalResult);
       
-      print('✅ 멀티모달 분석 완료: ${multimodalResult.availableModalities}개 모달리티');
+      print('✅ [Provider] 멀티모달 분석 완료: ${multimodalResult.availableModalities}개 모달리티');
       notifyListeners();
       
       return emotionDataPoint;
     } catch (e) {
-      print('❌ 멀티모달 분석 실패: $e');
+      print('❌ [Provider] 멀티모달 분석 실패: $e');
       setError('멀티모달 분석 중 오류가 발생했습니다: $e');
       return null;
     }

@@ -6,6 +6,7 @@ import '../../providers/vad_provider.dart';
 import '../../providers/cbt_provider.dart';
 import '../../theme/bemore_theme.dart';
 import '../session/session_screen.dart';
+import '../session/multimodal_session_screen.dart';
 import '../chat/chat_screen.dart';
 import '../history/history_screen.dart';
 import '../settings/settings_screen.dart';
@@ -177,7 +178,7 @@ class HomeScreen extends StatelessWidget {
       child: InkWell(
         onTap: () {
           Navigator.of(context).push(
-            MaterialPageRoute(builder: (context) => const SessionScreen()),
+            MaterialPageRoute(builder: (context) => const MultimodalSessionScreen()),
           );
         },
         borderRadius: BorderRadius.circular(16),

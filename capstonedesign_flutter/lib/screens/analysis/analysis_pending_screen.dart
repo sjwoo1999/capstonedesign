@@ -34,7 +34,9 @@ class _AnalysisPendingScreenState extends State<AnalysisPendingScreen>
   void initState() {
     super.initState();
     _setupAnimations();
-    _performAnalysis();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _performAnalysis();
+    });
   }
 
   void _setupAnimations() {
@@ -94,49 +96,79 @@ class _AnalysisPendingScreenState extends State<AnalysisPendingScreen>
   }
 
   void _performAnalysis() async {
-    // 즉시 분석 수행
-    if (mounted) {
-      setState(() {
-        _statusMessage = 'VAD 데이터 분석 중...';
-      });
+    // sessionData null/empty 체크
+    if (widget.sessionData.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('세션 데이터가 없습니다. 홈으로 이동합니다.')),
+        );
+        await Future.delayed(const Duration(seconds: 2));
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const HomeScreen()),
+            (route) => false,
+          );
+        }
+      }
+      return;
     }
-    
-    await Future.delayed(const Duration(seconds: 2));
-    
-    if (mounted) {
-      setState(() {
-        _statusMessage = '감정 패턴 분석 중...';
-      });
-    }
-    
-    await Future.delayed(const Duration(seconds: 3));
-    
-    if (mounted) {
-      setState(() {
-        _statusMessage = 'CBT 피드백 생성 중...';
-      });
-    }
-    
-    await Future.delayed(const Duration(seconds: 3));
-    
-    if (mounted) {
-      setState(() {
-        _statusMessage = '분석 완료!';
-        _isAnalyzing = false;
-      });
-    }
-    
-    await Future.delayed(const Duration(seconds: 2));
-    
-    // 분석 결과 화면으로 이동
-    if (mounted) {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => AnalysisResultScreen(
-            sessionData: widget.sessionData,
+
+    // 중복 분석 방지
+    if (!_isAnalyzing) return;
+
+    try {
+      if (mounted) {
+        setState(() {
+          _statusMessage = 'VAD 데이터 분석 중...';
+        });
+      }
+      await Future.delayed(const Duration(seconds: 2));
+      if (mounted) {
+        setState(() {
+          _statusMessage = '감정 패턴 분석 중...';
+        });
+      }
+      await Future.delayed(const Duration(seconds: 3));
+      if (mounted) {
+        setState(() {
+          _statusMessage = 'CBT 피드백 생성 중...';
+        });
+      }
+      await Future.delayed(const Duration(seconds: 3));
+      if (mounted) {
+        setState(() {
+          _statusMessage = '분석 완료!';
+          _isAnalyzing = false;
+        });
+      }
+      await Future.delayed(const Duration(seconds: 2));
+      // 분석 결과 화면으로 이동 (pushReplacement)
+      if (mounted) {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => AnalysisResultScreen(
+              sessionData: widget.sessionData,
+            ),
           ),
-        ),
-      );
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _statusMessage = '분석 중 오류가 발생했습니다. 홈으로 이동합니다.';
+          _isAnalyzing = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('분석 실패: $e')),
+        );
+        await Future.delayed(const Duration(seconds: 2));
+        if (mounted) {
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const HomeScreen()),
+            (route) => false,
+          );
+        }
+      }
     }
   }
 

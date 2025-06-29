@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'dart:async';
 import 'package:provider/provider.dart';
 import 'package:camera/camera.dart';
@@ -6,11 +7,13 @@ import 'package:permission_handler/permission_handler.dart';
 import '../../providers/emotion_provider.dart';
 import '../../services/audio_manager.dart';
 import '../../models/emotion_data_point.dart';
-import '../../models/multimodal_data_point.dart';
 import '../../theme/bemore_theme.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:io';
+import 'package:image/image.dart' as img;
+import '../analysis/analysis_result_screen.dart';
+import '../analysis/analysis_pending_screen.dart';
 
 /// 멀티모달 감정 분석 세션 화면
 /// 영상, 음성, 텍스트 세 가지 모달리티를 통합하여 실시간 감정 분석
@@ -45,17 +48,17 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
   
   // 분석 데이터
   final List<EmotionDataPoint> _sessionData = [];
-  final List<MultimodalDataPoint> _multimodalData = [];
   
   // 타이머
   Timer? _analysisTimer;
   Timer? _textDebounceTimer;
-  Timer? _imageCaptureTimer;
+  Timer? _sessionTimer;
   
   // UI 상태
   String _statusMessage = '세션을 시작하세요';
   String _analysisSummary = '';
   bool _showCameraPreview = false;
+  DateTime? _lastAnalyzedTime;
 
   @override
   void initState() {
@@ -67,12 +70,29 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _stopSession();
-    _cameraController?.dispose();
-    _audioManager.dispose();
+    
+    // 모든 타이머 정리
     _analysisTimer?.cancel();
     _textDebounceTimer?.cancel();
-    _imageCaptureTimer?.cancel();
+    _sessionTimer?.cancel();
+    
+    // 카메라 스트림 중지
+    if (_cameraController != null && _cameraController!.value.isStreamingImages) {
+      try {
+        _cameraController!.stopImageStream();
+        print('📷 카메라 스트림 정리 완료');
+      } catch (e) {
+        print('❌ 카메라 스트림 정리 실패: $e');
+      }
+    }
+    
+    // 카메라 컨트롤러 정리
+    _cameraController?.dispose();
+    _cameraController = null;
+    
+    // 오디오 매니저 정리
+    _audioManager.dispose();
+    
     super.dispose();
   }
 
@@ -138,48 +158,73 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
   /// 카메라 초기화
   Future<void> _initializeCamera() async {
     try {
-      _cameras = await availableCameras();
-      if (_cameras.isNotEmpty) {
-        // 전면 카메라 우선 선택
-        _selectedCameraIndex = _cameras.indexWhere((camera) => 
-          camera.lensDirection == CameraLensDirection.front) ?? 0;
-        
-        await _initializeCameraController();
-        print('✅ 카메라 초기화 완료: ${_cameras[_selectedCameraIndex].name}');
-      }
-    } catch (e) {
-      print('❌ 카메라 초기화 실패: $e');
-    }
-  }
-
-  /// 카메라 컨트롤러 초기화
-  Future<void> _initializeCameraController() async {
-    try {
-      _cameraController?.dispose();
+      print('🚀 멀티모달 세션 초기화 시작');
       
+      // 사용 가능한 카메라 목록 가져오기
+      final cameras = await availableCameras();
+      print('📷 사용 가능한 모든 카메라:');
+      for (int i = 0; i < cameras.length; i++) {
+        print('   $i: ${cameras[i].name} (${cameras[i].lensDirection})');
+      }
+      
+      _cameras = cameras;
+      
+      // 전면 카메라 우선 선택 (가장 낮은 인덱스)
+      final frontCameras = cameras.where((c) => c.lensDirection == CameraLensDirection.front).toList();
+      final backCameras = cameras.where((c) => c.lensDirection == CameraLensDirection.back).toList();
+      
+      print('📷 전면 카메라 목록: ${frontCameras.map((c) => cameras.indexOf(c)).toList()}');
+      print('📷 후면 카메라 목록: ${backCameras.map((c) => cameras.indexOf(c)).toList()}');
+      
+      if (frontCameras.isNotEmpty) {
+        _selectedCameraIndex = cameras.indexOf(frontCameras.first);
+        print('📷 전면 카메라 선택됨: 인덱스 $_selectedCameraIndex (가장 낮은 인덱스)');
+      } else if (backCameras.isNotEmpty) {
+        _selectedCameraIndex = cameras.indexOf(backCameras.first);
+        print('📷 후면 카메라 선택됨: 인덱스 $_selectedCameraIndex (전면 카메라 없음)');
+      } else {
+        _selectedCameraIndex = 0;
+        print('📷 기본 카메라 선택됨: 인덱스 $_selectedCameraIndex');
+      }
+      
+      final selectedCamera = cameras[_selectedCameraIndex];
+      print('📷 최종 선택된 카메라: ${selectedCamera.name} (${selectedCamera.lensDirection})');
+      
+      // 카메라 상세 정보 출력
+      print('📷 카메라 상세 정보:');
+      print('   - 이름: ${selectedCamera.name}');
+      print('   - 방향: ${selectedCamera.lensDirection}');
+      print('   - 인덱스: $_selectedCameraIndex');
+      
+      // 카메라 컨트롤러 초기화 (해상도를 medium으로 설정하여 왜곡 최소화)
+      print('📷 카메라 컨트롤러 초기화: ${selectedCamera.name}');
       _cameraController = CameraController(
-        _cameras[_selectedCameraIndex],
-        ResolutionPreset.medium, // medium으로 변경하여 성능 최적화
-        enableAudio: false, // 오디오는 AudioManager에서 처리
-        imageFormatGroup: ImageFormatGroup.jpeg,
+        selectedCamera,
+        ResolutionPreset.medium, // high 대신 medium 사용하여 왜곡 최소화
+        enableAudio: false, // 오디오는 별도로 처리
+        imageFormatGroup: ImageFormatGroup.bgra8888, // iOS에서 안정적인 포맷
       );
       
       await _cameraController!.initialize();
       
+      // 카메라 정보 출력
+      final value = _cameraController!.value;
+      print('📷 카메라 비율: ${value.aspectRatio}');
+      print('📷 카메라 방향: ${value.deviceOrientation}');
+      print('📷 카메라 초기화됨: ${value.isInitialized}');
+      
       setState(() {
         _isCameraInitialized = true;
       });
+      
+      print('✅ 카메라 초기화 완료: ${selectedCamera.name}');
+      
     } catch (e) {
-      print('❌ 카메라 컨트롤러 초기화 실패: $e');
+      print('❌ 카메라 초기화 실패: $e');
+      setState(() {
+        _statusMessage = '카메라 초기화 실패: $e';
+      });
     }
-  }
-
-  /// 카메라 전환
-  Future<void> _switchCamera() async {
-    if (_cameras.length < 2) return;
-    
-    _selectedCameraIndex = (_selectedCameraIndex + 1) % _cameras.length;
-    await _initializeCameraController();
   }
 
   /// 오디오 매니저 초기화
@@ -224,22 +269,25 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
       setState(() {
         _showCameraPreview = true;
       });
+      
+      // 카메라 스트림 시작 (프레임 캡처용)
+      await _startCameraStream();
     }
     
     // 오디오 녹음 시작
     await _audioManager.startRecording();
     
-    // 이미지 캡처 타이머 시작 (3초마다)
-    _imageCaptureTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
-      if (_isSessionActive && !_isAnalyzing) {
-        _captureImageForAnalysis();
-      }
+    // 30초 세션 타이머 시작
+    _sessionTimer = Timer(const Duration(seconds: 30), () async {
+      print('⏰ 30초 세션 타이머 완료 - 세션 종료');
+      await _stopSession();
     });
     
-    // 실시간 분석 타이머 시작
-    _analysisTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+    // 실시간 분석 타이머 시작 (5초마다)
+    _analysisTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
       if (_isSessionActive) {
-        _performMultimodalAnalysis();
+        print('🔄 주기적 분석 실행 (${DateTime.now().second}초)');
+        await _performMultimodalAnalysis();
       } else {
         timer.cancel();
       }
@@ -247,8 +295,212 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
     
     setState(() {
       _isSessionActive = true;
-      _statusMessage = '실시간 분석 중...';
+      _statusMessage = '실시간 분석 중... (30초)';
     });
+    
+    print('✅ 세션 시작 완료 - 30초 동안 5초마다 분석 실행');
+  }
+
+  /// 카메라 스트림 시작 (프레임 캡처용)
+  Future<void> _startCameraStream() async {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) return;
+    
+    // 이미 스트리밍 중이면 중복 시작 방지
+    if (_cameraController!.value.isStreamingImages) {
+      print('⚠️ 카메라 스트림이 이미 실행 중입니다.');
+      return;
+    }
+    
+    try {
+      print('📷 카메라 스트림 시작 (프레임 캡처용)');
+      
+      await _cameraController!.startImageStream((CameraImage image) {
+        // 즉시 첫 프레임 캡처
+        if (_lastAnalyzedTime == null) {
+          _lastAnalyzedTime = DateTime.now();
+          _captureFrameForAnalysis(image);
+          print('📷 첫 프레임 캡처 완료');
+        }
+        // 이후 5초마다 프레임 캡처
+        else {
+          final now = DateTime.now();
+          if (now.difference(_lastAnalyzedTime!).inSeconds >= 5) {
+            _lastAnalyzedTime = now;
+            _captureFrameForAnalysis(image);
+            print('📷 주기적 프레임 캡처 완료');
+          }
+        }
+      });
+      
+      print('✅ 카메라 스트림 시작 완료');
+    } catch (e) {
+      print('❌ 카메라 스트림 시작 실패: $e');
+    }
+  }
+
+  /// 프레임 캡처 (분석용)
+  void _captureFrameForAnalysis(CameraImage image) {
+    if (!_isSessionActive || _isAnalyzing) return;
+    
+    try {
+      print('📷 프레임 캡처: ${image.width} x ${image.height}');
+      
+      // CameraImage를 Base64로 변환
+      final base64Image = _convertCameraImageToBase64(image);
+      
+      // EmotionProvider에 이미지 데이터 설정
+      final emotionProvider = Provider.of<EmotionProvider>(context, listen: false);
+      emotionProvider.setImageData(base64Image);
+      
+      print('✅ 프레임 캡처 완료 - 이미지 데이터 설정됨');
+      
+    } catch (e) {
+      print('❌ 프레임 캡처 실패: $e');
+    }
+  }
+
+  /// CameraImage를 Base64로 변환
+  String _convertCameraImageToBase64(CameraImage image) {
+    try {
+      final int width = image.width;
+      final int height = image.height;
+      
+      // 다양한 이미지 포맷 지원
+      if (image.planes.length == 1) {
+        // 단일 플레인 (예: BGRA, RGBA)
+        print('📷 단일 플레인 이미지 처리: [32m[0m');
+        return _convertSinglePlaneImage(image);
+      } else if (image.planes.length == 3) {
+        // YUV 포맷
+        print('📷 YUV 이미지 처리');
+        return _convertYUVImage(image);
+      } else {
+        print('⚠️ 지원하지 않는 이미지 포맷: ${image.planes.length} planes');
+        return _createDummyImageBase64();
+      }
+      
+    } catch (e) {
+      print('❌ 이미지 변환 실패: $e');
+      return _createDummyImageBase64();
+    }
+  }
+
+  /// YUV 이미지 변환
+  String _convertYUVImage(CameraImage image) {
+    final int width = image.width;
+    final int height = image.height;
+    
+    final int uvRowStride = image.planes[1].bytesPerRow;
+    final int? uvPixelStride = image.planes[1].bytesPerPixel;
+
+    final yPlane = image.planes[0].bytes;
+    final uPlane = image.planes[1].bytes;
+    final vPlane = image.planes[2].bytes;
+
+    // 배열 크기 검사
+    if (yPlane.length < width * height || 
+        uPlane.length < (width * height) ~/ 4 || 
+        vPlane.length < (width * height) ~/ 4) {
+      print('⚠️ 이미지 데이터 크기가 부족합니다. Y:${yPlane.length}, U:${uPlane.length}, V:${vPlane.length}');
+      return _createDummyImageBase64();
+    }
+
+    final outImg = img.Image(width: width, height: height);
+
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        final int yIndex = y * width + x;
+        
+        // UV 인덱스 계산 (안전하게)
+        final int uvY = (y / 2).floor();
+        final int uvX = (x / 2).floor();
+        final int uvIndex = uvY * uvRowStride + uvX * (uvPixelStride ?? 1);
+        
+        // 배열 범위 검사
+        if (yIndex >= yPlane.length || uvIndex >= uPlane.length || uvIndex >= vPlane.length) {
+          continue; // 이 픽셀은 건너뛰기
+        }
+        
+        final int yValue = yPlane[yIndex];
+        final int uValue = uPlane[uvIndex];
+        final int vValue = vPlane[uvIndex];
+
+        // ITU-R BT.601 conversion
+        int r = (yValue + 1.402 * (vValue - 128)).round();
+        int g = (yValue - 0.344136 * (uValue - 128) - 0.714136 * (vValue - 128)).round();
+        int b = (yValue + 1.772 * (uValue - 128)).round();
+        
+        r = r.clamp(0, 255);
+        g = g.clamp(0, 255);
+        b = b.clamp(0, 255);
+
+        outImg.setPixelRgba(x, y, r, g, b, 255);
+      }
+    }
+    
+    // JPEG로 인코딩
+    final jpg = img.encodeJpg(outImg, quality: 85);
+    return base64Encode(jpg);
+  }
+
+  /// 단일 플레인 이미지 변환 (BGRA, RGBA 등)
+  String _convertSinglePlaneImage(CameraImage image) {
+    final int width = image.width;
+    final int height = image.height;
+    final bytes = image.planes[0].bytes;
+    
+    final outImg = img.Image(width: width, height: height);
+    
+    // BGRA 또는 RGBA 포맷 처리
+    final bytesPerPixel = bytes.length ~/ (width * height);
+    
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        final index = (y * width + x) * bytesPerPixel;
+        
+        if (index + 3 < bytes.length) {
+          int r, g, b, a;
+          
+          if (bytesPerPixel == 4) {
+            // BGRA 또는 RGBA
+            b = bytes[index];
+            g = bytes[index + 1];
+            r = bytes[index + 2];
+            a = bytes[index + 3];
+          } else if (bytesPerPixel == 3) {
+            // BGR 또는 RGB
+            b = bytes[index];
+            g = bytes[index + 1];
+            r = bytes[index + 2];
+            a = 255;
+          } else {
+            // 그레이스케일
+            r = g = b = bytes[index];
+            a = 255;
+          }
+          
+          outImg.setPixelRgba(x, y, r, g, b, a);
+        }
+      }
+    }
+    
+    // JPEG로 인코딩
+    final jpg = img.encodeJpg(outImg, quality: 85);
+    return base64Encode(jpg);
+  }
+
+  /// 더미 이미지 생성 (오류 시 사용)
+  String _createDummyImageBase64() {
+    try {
+      // 1x1 픽셀의 회색 이미지 생성
+      final dummyImg = img.Image(width: 1, height: 1);
+      dummyImg.setPixelRgba(0, 0, 128, 128, 128, 255);
+      final jpg = img.encodeJpg(dummyImg, quality: 85);
+      return base64Encode(jpg);
+    } catch (e) {
+      print('❌ 더미 이미지 생성 실패: $e');
+      return '';
+    }
   }
 
   /// 세션 중지
@@ -259,7 +511,17 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
     
     _analysisTimer?.cancel();
     _textDebounceTimer?.cancel();
-    _imageCaptureTimer?.cancel();
+    _sessionTimer?.cancel();
+    
+    // 카메라 스트림 중지
+    if (_cameraController != null && _cameraController!.value.isStreamingImages) {
+      try {
+        await _cameraController!.stopImageStream();
+        print('📷 카메라 스트림 중지 완료');
+      } catch (e) {
+        print('❌ 카메라 스트림 중지 실패: $e');
+      }
+    }
     
     // 카메라 프리뷰 중지
     setState(() {
@@ -282,13 +544,33 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
     print('📊 세션 결과: ${sessionResult.feedback}');
     print('📈 분석 품질: ${(emotionProvider.currentAnalysisQuality * 100).toStringAsFixed(1)}%');
     print('📊 사용된 모달리티: ${emotionProvider.availableModalitiesInfo}');
+
+    // 세션 중지 후 분석 대기 화면으로 이동
+    if (mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (context) => AnalysisPendingScreen(sessionData: _sessionData),
+        ),
+      );
+    }
   }
 
   /// 세션 일시정지
   void _pauseSession() {
     if (_isSessionActive) {
       _analysisTimer?.cancel();
-      _imageCaptureTimer?.cancel();
+      _sessionTimer?.cancel();
+      
+      // 카메라 스트림 일시정지
+      if (_cameraController != null && _cameraController!.value.isStreamingImages) {
+        try {
+          _cameraController!.stopImageStream();
+          print('📷 카메라 스트림 일시정지');
+        } catch (e) {
+          print('❌ 카메라 스트림 일시정지 실패: $e');
+        }
+      }
+      
       setState(() {
         _statusMessage = '세션 일시정지됨';
       });
@@ -298,81 +580,64 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
   /// 세션 재개
   void _resumeSession() {
     if (_isSessionActive) {
-      _imageCaptureTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
-        if (_isSessionActive && !_isAnalyzing) {
-          _captureImageForAnalysis();
-        }
-      });
+      // 카메라 스트림 재시작
+      _startCameraStream();
       
-      _analysisTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
+      // 분석 타이머 재시작
+      _analysisTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
         if (_isSessionActive) {
-          _performMultimodalAnalysis();
+          await _performMultimodalAnalysis();
         } else {
           timer.cancel();
         }
       });
       
       setState(() {
-        _statusMessage = '실시간 분석 중...';
+        _statusMessage = '실시간 분석 중... (30초)';
       });
     }
   }
 
-  /// 이미지 캡처 (분석용)
-  Future<String?> _captureImageForAnalysis() async {
-    if (_cameraController == null || !_cameraController!.value.isInitialized) {
-      return null;
-    }
-    
-    try {
-      final image = await _cameraController!.takePicture();
-      final bytes = await File(image.path).readAsBytes();
-      final base64Image = base64Encode(bytes);
-      print('📷 이미지 캡처: ${base64Image.length} bytes');
-      return base64Image;
-    } catch (e) {
-      print('❌ 이미지 캡처 실패: $e');
-      return null;
-    }
-  }
-
-  /// 멀티모달 분석 실행
+  /// 멀티모달 분석 수행
   Future<void> _performMultimodalAnalysis() async {
-    if (_isAnalyzing) return;
+    if (_isAnalyzing) {
+      print('⚠️ 이미 분석 중입니다. 중복 실행 방지');
+      return;
+    }
     
     setState(() {
       _isAnalyzing = true;
     });
     
     try {
-      print('🔍 멀티모달 분석 실행');
+      print('🔍 [Session] 멀티모달 분석 실행 시작');
       
+      // EmotionProvider에서 현재 데이터 가져오기
       final emotionProvider = Provider.of<EmotionProvider>(context, listen: false);
       
-      // 현재 데이터 수집
-      String? imageData;
-      String? audioData;
-      String? textData = _recognizedText.isNotEmpty ? _recognizedText : null;
+      // 이미지 데이터는 이미 스트림에서 캡처되어 있음
+      final imageData = emotionProvider.currentImageData;
+      final audioData = emotionProvider.currentAudioData;
+      final textData = emotionProvider.currentTextData;
       
-      // 이미지 데이터 (캐시된 것 사용)
-      imageData = await _captureImageForAnalysis();
+      print('📊 [Session] 분석할 데이터 상태:');
+      print('   - 이미지 데이터: ${imageData != null ? "있음 (${imageData.length} bytes)" : "없음"}');
+      print('   - 오디오 데이터: ${audioData != null ? "있음 (${audioData.length} bytes)" : "없음"}');
+      print('   - 텍스트 데이터: ${textData != null ? "있음" : "없음"}');
       
-      // 오디오 데이터 수집
-      if (_audioManager.isRecording) {
-        try {
-          audioData = await _audioManager.getCurrentAudioData();
-          print('🎤 오디오 데이터: ${audioData?.length ?? 0} bytes');
-        } catch (e) {
-          print('❌ 오디오 데이터 수집 실패: $e');
+      // 오디오 데이터가 없으면 현재 녹음된 오디오 가져오기
+      String? finalAudioData = audioData;
+      if (finalAudioData == null) {
+        print('🎤 [Session] 오디오 데이터가 없어서 현재 녹음된 오디오 가져오기 시도');
+        finalAudioData = await _audioManager.getCurrentAudioData();
+        if (finalAudioData != null) {
+          emotionProvider.setAudioData(finalAudioData);
+          print('🎤 [Session] 현재 녹음된 오디오 데이터 설정 완료');
         }
       }
       
-      // EmotionProvider에 데이터 설정
-      emotionProvider.setImageData(imageData);
-      emotionProvider.setAudioData(audioData);
-      emotionProvider.setTextData(textData);
-      
-      // 멀티모달 분석 실행
+      // EmotionProvider의 멀티모달 분석 실행
+      print('🚀 [Session] EmotionProvider 멀티모달 분석 호출');
       final dataPoint = await emotionProvider.performMultimodalAnalysis(
         sessionId: DateTime.now().millisecondsSinceEpoch.toString(),
         metadata: {
@@ -383,24 +648,25 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
       
       if (dataPoint != null) {
         _sessionData.add(dataPoint);
-        if (dataPoint.hasMultimodalData) {
-          _multimodalData.add(dataPoint.multimodalData!);
-        }
         
         setState(() {
           _currentEmotion = dataPoint.emotion ?? 'neutral';
           _currentConfidence = dataPoint.confidence ?? 0.0;
         });
         
-        print('✅ 멀티모달 분석 완료: ${dataPoint.emotion} (${(dataPoint.confidence ?? 0.0 * 100).toStringAsFixed(1)}%)');
+        print('✅ [Session] 멀티모달 분석 완료: ${dataPoint.emotion} (${(dataPoint.confidence ?? 0.0 * 100).toStringAsFixed(1)}%)');
+        print('📊 [Session] 세션 데이터 포인트 추가됨: 총 ${_sessionData.length}개');
+      } else {
+        print('❌ [Session] 멀티모달 분석 결과가 null입니다');
       }
       
     } catch (e) {
-      print('❌ 멀티모달 분석 실패: $e');
+      print('❌ [Session] 멀티모달 분석 실패: $e');
     } finally {
       setState(() {
         _isAnalyzing = false;
       });
+      print('🏁 [Session] 분석 상태 해제됨');
     }
   }
 
@@ -411,6 +677,11 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
     setState(() {
       _recognizedText = text;
     });
+    
+    // EmotionProvider에 텍스트 데이터 전달
+    final emotionProvider = Provider.of<EmotionProvider>(context, listen: false);
+    emotionProvider.setTextData(text);
+    print('📝 텍스트 데이터 수집: $text');
     
     // 텍스트 디바운스
     _textDebounceTimer?.cancel();
@@ -427,78 +698,176 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
       backgroundColor: Colors.black,
       body: Stack(
         children: [
-          // 카메라 프리뷰 (전체 화면)
+          // 메인 배경 (깔끔한 그라데이션)
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFF1a1a1a),
+                  Color(0xFF000000),
+                ],
+              ),
+            ),
+          ),
+          
+          // 메인 콘텐츠
+          SafeArea(
+            child: Column(
+              children: [
+                // 상단 상태 바
+                _buildTopStatusBar(),
+                
+                const Spacer(),
+                
+                // 중앙 안내 메시지
+                if (!_isSessionActive) _buildCenterGuide(),
+                
+                const Spacer(),
+                
+                // 하단 컨트롤
+                _buildBottomControls(),
+              ],
+            ),
+          ),
+          
+          // 우측 하단 작은 카메라 프리뷰 (원형)
           if (_showCameraPreview && _isCameraInitialized && _cameraController != null)
-            _buildCameraPreview(),
-          
-          // 오버레이 UI
-          _buildOverlayUI(),
-          
-          // 하단 컨트롤 영역
-          _buildBottomControls(),
+            _buildSmallCameraPreview(),
         ],
       ),
     );
   }
 
-  Widget _buildCameraPreview() {
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      child: ClipRect(
-        child: OverflowBox(
-          alignment: Alignment.center,
-          maxWidth: double.infinity,
-          maxHeight: double.infinity,
-          child: FittedBox(
-            fit: BoxFit.cover,
-            child: SizedBox(
-              width: _cameraController!.value.previewSize?.width ?? 1,
-              height: _cameraController!.value.previewSize?.height ?? 1,
-              child: CameraPreview(_cameraController!),
+  /// 작은 카메라 프리뷰 위젯
+  Widget _buildSmallCameraPreview() {
+    if (_cameraController == null || !_isCameraInitialized) {
+      return const SizedBox.shrink();
+    }
+
+    final selectedCamera = _cameras[_selectedCameraIndex];
+    final isFrontCamera = selectedCamera.lensDirection == CameraLensDirection.front;
+
+    return Positioned(
+      right: 20,
+      bottom: 120,
+      child: Container(
+        width: 120, // 크기 증가
+        height: 120, // 크기 증가
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 3),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.4),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
             ),
-          ),
+          ],
+        ),
+        child: ClipOval(
+          child: _buildOptimizedCameraPreview(isFrontCamera),
         ),
       ),
     );
   }
 
-  Widget _buildOverlayUI() {
-    return SafeArea(
-      child: Column(
-        children: [
-          // 상단 상태 바
-          _buildTopStatusBar(),
-          
-          const Spacer(),
-          
-          // 중앙 분석 결과
-          if (_isSessionActive) _buildAnalysisResults(),
-          
-          const Spacer(),
-          
-          // 음성 파형 (있는 경우)
-          if (_isListening && _currentSoundLevel > 0) _buildSoundWave(),
-        ],
+  /// 최적화된 카메라 프리뷰 (왜곡 최소화)
+  Widget _buildOptimizedCameraPreview(bool isFrontCamera) {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) {
+      return Container(
+        color: Colors.grey[800],
+        child: const Center(
+          child: CircularProgressIndicator(
+            color: Colors.white,
+            strokeWidth: 2,
+          ),
+        ),
+      );
+    }
+    
+    // 중앙 크롭 + 비율 유지로 왜곡 최소화
+    Widget cameraWidget = ClipRect(
+      child: Align(
+        alignment: Alignment.center,
+        widthFactor: 0.8, // 중앙 80%만 사용 (왜곡이 심한 가장자리 제거)
+        heightFactor: 0.8,
+        child: AspectRatio(
+          aspectRatio: _cameraController!.value.aspectRatio,
+          child: CameraPreview(_cameraController!),
+        ),
       ),
     );
+    
+    // 전면 카메라일 때만 미러링 적용 (좌우반전)
+    if (isFrontCamera) {
+      cameraWidget = Transform(
+        alignment: Alignment.center,
+        transform: Matrix4.identity()..scale(-1.0, 1.0, 1.0),
+        child: cameraWidget,
+      );
+    }
+    
+    return cameraWidget;
+  }
+
+  Widget _buildCameraPreview() {
+    if (_cameraController == null || !_cameraController!.value.isInitialized) {
+      return Container(
+        color: Colors.grey[800],
+        child: const Center(
+          child: CircularProgressIndicator(
+            color: Colors.white,
+            strokeWidth: 2,
+          ),
+        ),
+      );
+    }
+    
+    final selectedCamera = _cameras[_selectedCameraIndex];
+    final isFrontCamera = selectedCamera.lensDirection == CameraLensDirection.front;
+    
+    // 중앙 크롭 + 비율 유지로 왜곡 최소화
+    Widget cameraWidget = ClipRect(
+      child: Align(
+        alignment: Alignment.center,
+        widthFactor: 0.8, // 중앙 80%만 사용 (왜곡이 심한 가장자리 제거)
+        heightFactor: 0.8,
+        child: AspectRatio(
+          aspectRatio: _cameraController!.value.aspectRatio,
+          child: CameraPreview(_cameraController!),
+        ),
+      ),
+    );
+    
+    // 전면 카메라일 때만 미러링 적용
+    if (isFrontCamera) {
+      cameraWidget = Transform(
+        alignment: Alignment.center,
+        transform: Matrix4.identity()..scale(-1.0, 1.0, 1.0),
+        child: cameraWidget,
+      );
+    }
+    
+    return cameraWidget;
   }
 
   Widget _buildTopStatusBar() {
     return Container(
-      margin: const EdgeInsets.all(12),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(0.7),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.white.withOpacity(0.2)),
       ),
       child: Row(
         children: [
           // 상태 인디케이터
           Container(
-            width: 6,
-            height: 6,
+            width: 8,
+            height: 8,
             decoration: BoxDecoration(
               color: _isSessionActive 
                 ? (_isAnalyzing ? Colors.blue : Colors.green)
@@ -506,7 +875,7 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
               shape: BoxShape.circle,
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 12),
           
           // 상태 메시지
           Expanded(
@@ -514,278 +883,102 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
               _statusMessage,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 12,
+                fontSize: 14,
                 fontWeight: FontWeight.w500,
               ),
             ),
           ),
-          
-          // 카메라 전환 버튼
-          if (_isCameraInitialized && _cameras.length > 1)
-            GestureDetector(
-              onTap: _switchCamera,
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.flip_camera_ios,
-                  color: Colors.white,
-                  size: 16,
-                ),
-              ),
-            ),
         ],
       ),
     );
   }
 
-  Widget _buildAnalysisResults() {
+  Widget _buildCenterGuide() {
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.8),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withOpacity(0.2)),
-      ),
+      padding: const EdgeInsets.all(32),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // 감정 결과
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _buildResultItem(
-                icon: Icons.emoji_emotions,
-                label: '감정',
-                value: _currentEmotion,
-                color: Colors.blue,
-              ),
-              _buildResultItem(
-                icon: Icons.psychology,
-                label: '신뢰도',
-                value: '${(_currentConfidence * 100).toStringAsFixed(1)}%',
-                color: Colors.green,
-              ),
-              _buildResultItem(
-                icon: Icons.analytics,
-                label: '데이터',
-                value: '${_sessionData.length}개',
-                color: Colors.orange,
-              ),
-            ],
-          ),
-          
-          // 인식된 텍스트
-          if (_recognizedText.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.mic,
-                        color: Colors.white.withOpacity(0.7),
-                        size: 14,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '인식된 텍스트',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.7),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    _recognizedText,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
+          // 아이콘
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.1),
+              shape: BoxShape.circle,
             ),
-          ],
+            child: const Icon(
+              Icons.psychology,
+              color: Colors.white,
+              size: 40,
+            ),
+          ),
+          const SizedBox(height: 24),
+          
+          // 제목
+          const Text(
+            '멀티모달 감정 분석',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+          
+          // 설명
+          Text(
+            '30초마다 자동으로 감정을 분석합니다\n자연스럽게 대화하시면 됩니다',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.7),
+              fontSize: 16,
+            ),
+            textAlign: TextAlign.center,
+          ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildResultItem({
-    required IconData icon,
-    required String label,
-    required String value,
-    required Color color,
-  }) {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: color.withOpacity(0.2),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(
-            icon,
-            color: color,
-            size: 18,
-          ),
-        ),
-        const SizedBox(height: 6),
-        Text(
-          label,
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.7),
-            fontSize: 10,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: TextStyle(
-            color: color,
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildSoundWave() {
-    return Container(
-      height: 30,
-      margin: const EdgeInsets.symmetric(horizontal: 12),
-      child: CustomPaint(
-        painter: SoundWavePainter(_currentSoundLevel),
-        size: const Size(double.infinity, 30),
       ),
     );
   }
 
   Widget _buildBottomControls() {
-    return Positioned(
-      bottom: 0,
-      left: 0,
-      right: 0,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.bottomCenter,
-            end: Alignment.topCenter,
-            colors: [
-              Colors.black.withOpacity(0.9),
-              Colors.black.withOpacity(0.0),
-            ],
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            // 세션 시작/중지 버튼
-            Expanded(
-              child: GestureDetector(
-                onTap: _isSessionActive ? _stopSession : _startSession,
-                child: Container(
-                  height: 44,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: _isSessionActive 
-                        ? [Colors.red, Colors.red.shade700]
-                        : [Colors.green, Colors.green.shade700],
-                    ),
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: (_isSessionActive ? Colors.red : Colors.green).withOpacity(0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
+    return Container(
+      padding: const EdgeInsets.all(24),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // 세션 시작/중지 버튼
+          GestureDetector(
+            onTap: _isSessionActive ? _stopSession : _startSession,
+            child: Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: _isSessionActive 
+                    ? [Colors.red, Colors.red.shade700]
+                    : [Colors.green, Colors.green.shade700],
+                ),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: (_isSessionActive ? Colors.red : Colors.green).withOpacity(0.3),
+                    blurRadius: 15,
+                    spreadRadius: 3,
+                    offset: const Offset(0, 4),
                   ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        _isSessionActive ? Icons.stop : Icons.play_arrow,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        _isSessionActive ? '중지' : '시작',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
+                ],
+              ),
+              child: Center(
+                child: Icon(
+                  _isSessionActive ? Icons.stop : Icons.play_arrow,
+                  color: Colors.white,
+                  size: 32,
                 ),
               ),
             ),
-            
-            // 수동 분석 버튼
-            if (_isSessionActive) ...[
-              const SizedBox(width: 12),
-              GestureDetector(
-                onTap: _performMultimodalAnalysis,
-                child: Container(
-                  height: 44,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: Colors.blue,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.blue.withOpacity(0.3),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        Icons.analytics,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 6),
-                      const Text(
-                        '분석',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

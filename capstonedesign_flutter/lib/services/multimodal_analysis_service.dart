@@ -78,12 +78,16 @@ class MultimodalAnalysisService {
   /// 영상 분석
   Future<ModalityData?> _analyzeVisual(String base64Image) async {
     try {
-      print('📷 영상 분석 시작');
+      print('📷 [Multimodal] 영상 분석 시작');
+      print('📷 [Multimodal] 영상 데이터 크기: ${base64Image.length} bytes');
+      
       final response = await _emotionApiService.sendImageForAnalysis(base64Image);
+      
+      print('📊 [Multimodal] 영상 분석 응답 키: ${response.keys.toList()}');
       
       if (response.containsKey('face_emotion') && response.containsKey('final_vad')) {
         final vad = response['final_vad'] as Map<String, dynamic>;
-        return ModalityData(
+        final result = ModalityData(
           valence: vad['valence']?.toDouble(),
           arousal: vad['arousal']?.toDouble(),
           dominance: vad['dominance']?.toDouble(),
@@ -91,9 +95,16 @@ class MultimodalAnalysisService {
           confidence: response['confidence']?.toDouble() ?? 0.8,
           rawData: base64Image,
         );
+        
+        print('✅ [Multimodal] 영상 분석 성공: ${result.emotion} (${result.confidence})');
+        return result;
+      } else {
+        print('❌ [Multimodal] 영상 분석 응답에 필요한 키가 없음');
+        print('   - face_emotion: ${response.containsKey('face_emotion')}');
+        print('   - final_vad: ${response.containsKey('final_vad')}');
       }
     } catch (e) {
-      print('❌ 영상 분석 실패: $e');
+      print('❌ [Multimodal] 영상 분석 실패: $e');
     }
     return null;
   }
@@ -101,22 +112,34 @@ class MultimodalAnalysisService {
   /// 음성 분석
   Future<ModalityData?> _analyzeAudio(String base64Audio) async {
     try {
-      print('🎤 음성 분석 시작');
+      print('🎤 [Multimodal] 음성 분석 시작');
+      print('🎤 [Multimodal] 음성 데이터 크기: ${base64Audio.length} bytes');
+      
       final response = await _emotionApiService.sendAudioForAnalysis(base64Audio);
       
-      if (response.containsKey('audio_emotion') && response.containsKey('audio_vad')) {
+      print('📊 [Multimodal] 음성 분석 응답 키: ${response.keys.toList()}');
+      
+      if (response.containsKey('emotion_tag') && response.containsKey('audio_vad')) {
         final vad = response['audio_vad'] as Map<String, dynamic>;
-        return ModalityData(
+        final result = ModalityData(
           valence: vad['valence']?.toDouble(),
           arousal: vad['arousal']?.toDouble(),
           dominance: vad['dominance']?.toDouble(),
-          emotion: response['audio_emotion'],
+          emotion: response['emotion_tag'],
           confidence: response['audio_confidence']?.toDouble() ?? 0.7,
           rawData: base64Audio,
         );
+        
+        print('✅ [Multimodal] 음성 분석 성공: ${result.emotion} (${result.confidence})');
+        return result;
+      } else {
+        print('❌ [Multimodal] 음성 분석 응답에 필요한 키가 없음');
+        print('   - emotion_tag: ${response.containsKey('emotion_tag')}');
+        print('   - audio_vad: ${response.containsKey('audio_vad')}');
+        print('   - 실제 응답 키: ${response.keys.toList()}');
       }
     } catch (e) {
-      print('❌ 음성 분석 실패: $e');
+      print('❌ [Multimodal] 음성 분석 실패: $e');
     }
     return null;
   }
@@ -124,12 +147,16 @@ class MultimodalAnalysisService {
   /// 텍스트 분석
   Future<ModalityData?> _analyzeText(String text) async {
     try {
-      print('📝 텍스트 분석 시작');
+      print('📝 [Multimodal] 텍스트 분석 시작');
+      print('📝 [Multimodal] 텍스트 내용: "$text"');
+      
       final response = await _emotionApiService.sendTextForAnalysis(text);
+      
+      print('📊 [Multimodal] 텍스트 분석 응답 키: ${response.keys.toList()}');
       
       if (response.containsKey('text_emotion') && response.containsKey('text_vad')) {
         final vad = response['text_vad'] as Map<String, dynamic>;
-        return ModalityData(
+        final result = ModalityData(
           valence: vad['valence']?.toDouble(),
           arousal: vad['arousal']?.toDouble(),
           dominance: vad['dominance']?.toDouble(),
@@ -137,9 +164,16 @@ class MultimodalAnalysisService {
           confidence: response['text_confidence']?.toDouble() ?? 0.6,
           rawData: text,
         );
+        
+        print('✅ [Multimodal] 텍스트 분석 성공: ${result.emotion} (${result.confidence})');
+        return result;
+      } else {
+        print('❌ [Multimodal] 텍스트 분석 응답에 필요한 키가 없음');
+        print('   - text_emotion: ${response.containsKey('text_emotion')}');
+        print('   - text_vad: ${response.containsKey('text_vad')}');
       }
     } catch (e) {
-      print('❌ 텍스트 분석 실패: $e');
+      print('❌ [Multimodal] 텍스트 분석 실패: $e');
     }
     return null;
   }
