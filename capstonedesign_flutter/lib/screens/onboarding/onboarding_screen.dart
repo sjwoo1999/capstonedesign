@@ -208,43 +208,49 @@ class OnboardingPageWidget extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           // 애니메이션 이미지 (임시로 아이콘 사용)
-          Container(
-            width: 200,
-            height: 200,
-            decoration: BoxDecoration(
-              color: page.color.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              _getIconForPage(page),
-              size: 80,
-              color: page.color,
+          Flexible(
+            child: Container(
+              width: 200,
+              height: 200,
+              decoration: BoxDecoration(
+                color: page.color.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                _getIconForPage(page),
+                size: 80,
+                color: page.color,
+              ),
             ),
           ),
           
-          const SizedBox(height: 48),
+          const SizedBox(height: 32),
           
           // 제목
-          Text(
-            page.title,
-            style: Theme.of(context).textTheme.displaySmall?.copyWith(
-              color: BeMoreTheme.textPrimary,
-              fontWeight: FontWeight.bold,
-              height: 1.2,
+          Flexible(
+            child: Text(
+              page.title,
+              style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                color: BeMoreTheme.textPrimary,
+                fontWeight: FontWeight.bold,
+                height: 1.2,
+              ),
+              textAlign: TextAlign.center,
             ),
-            textAlign: TextAlign.center,
           ),
           
           const SizedBox(height: 16),
           
           // 부제목
-          Text(
-            page.subtitle,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color: BeMoreTheme.textSecondary,
-              height: 1.5,
+          Flexible(
+            child: Text(
+              page.subtitle,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: BeMoreTheme.textSecondary,
+                height: 1.5,
+              ),
+              textAlign: TextAlign.center,
             ),
-            textAlign: TextAlign.center,
           ),
         ],
       ),

@@ -54,7 +54,13 @@ class AudioManager {
       _speech = stt.SpeechToText();
       final available = await _speech.initialize(
         onError: (error) {
-          onError?.call('STT Error: ${error.errorMsg}');
+          print('🎤 [AudioManager] STT 에러: ${error.errorMsg}');
+          // error_no_match는 정상적인 상황이므로 에러로 처리하지 않음
+          if (!error.errorMsg.contains('no_match')) {
+            onError?.call('STT Error: ${error.errorMsg}');
+          } else {
+            print('ℹ️ [AudioManager] 음성 인식 없음 (정상적인 상황)');
+          }
         },
         onStatus: (status) {
           print('STT Status: $status');
@@ -122,7 +128,7 @@ class AudioManager {
       
       print('📁 [AudioManager] 녹음 파일 경로: $_currentRecordingPath');
 
-      // 녹음 설정
+      // 녹음 설정 - STT와 충돌하지 않도록 별도 인스턴스 사용
       final recorder = Record();
       
       // 녹음 시작
@@ -144,6 +150,7 @@ class AudioManager {
       print('   - 샘플링 레이트: 44.1kHz');
       print('   - 채널: 2 (스테레오)');
       print('   - 시작 시간: $_recordingStartTime');
+      print('   - STT와 동시 실행: ${_isListening ? "예" : "아니오"}');
 
     } catch (e) {
       print('❌ [AudioManager] 녹음 시작 실패: $e');
@@ -226,13 +233,24 @@ class AudioManager {
     }
     
     try {
+      print('🎤 [AudioManager] STT 시작 시도');
+      print('🎤 [AudioManager] 로케일: $localeId');
+      print('🎤 [AudioManager] 청취 시간: ${listenFor.inSeconds}초');
+      print('🎤 [AudioManager] 일시정지 시간: ${pauseFor.inSeconds}초');
+      
       await _speech.listen(
         onResult: (result) {
+          print('🎤 [AudioManager] STT 결과: ${result.recognizedWords} (final: ${result.finalResult})');
           if (result.finalResult) {
             final text = result.recognizedWords.trim();
             if (text.isNotEmpty) {
+              print('✅ [AudioManager] 최종 텍스트 인식: "$text"');
               onTextRecognized?.call(text);
+            } else {
+              print('⚠️ [AudioManager] 빈 텍스트 결과');
             }
+          } else {
+            print('🔄 [AudioManager] 부분 텍스트 인식: "${result.recognizedWords}"');
           }
         },
         listenFor: listenFor,
@@ -241,13 +259,36 @@ class AudioManager {
         cancelOnError: false,
         listenMode: stt.ListenMode.dictation,
         localeId: localeId,
-        // onSoundLevelChange 제거 - VAD 충돌 방지
+        onSoundLevelChange: (level) {
+          // VAD 충돌 방지를 위해 소리 레벨은 별도로 처리하지 않음
+          // print('🎤 [AudioManager] 소리 레벨: $level');
+        },
       );
       
       _isListening = true;
+      print('✅ [AudioManager] STT 시작 성공');
+      
+      // STT 세션 완료 후 자동 재시작 (더 짧은 간격으로)
+      final totalDuration = listenFor + pauseFor + const Duration(seconds: 1);
+      print('⏰ [AudioManager] STT 자동 재시작 예약: ${totalDuration.inSeconds}초 후');
+      
+      Timer(totalDuration, () {
+        if (_isListening) {
+          print('🔄 [AudioManager] STT 세션 완료, 자동 재시작');
+          startSTTOnly(
+            localeId: localeId,
+            listenFor: listenFor,
+            pauseFor: pauseFor,
+          );
+        } else {
+          print('⏹️ [AudioManager] STT가 중지됨, 자동 재시작 취소');
+        }
+      });
+      
       return true;
       
     } catch (e) {
+      print('❌ [AudioManager] STT 시작 실패: $e');
       onError?.call('STT 시작 실패: $e');
       return false;
     }

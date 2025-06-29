@@ -169,16 +169,17 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
       
       _cameras = cameras;
       
-      // 전면 카메라 우선 선택 (가장 낮은 인덱스)
+      // 전면 카메라 우선 선택 (사용자 경험 최우선)
       final frontCameras = cameras.where((c) => c.lensDirection == CameraLensDirection.front).toList();
       final backCameras = cameras.where((c) => c.lensDirection == CameraLensDirection.back).toList();
       
       print('📷 전면 카메라 목록: ${frontCameras.map((c) => cameras.indexOf(c)).toList()}');
       print('📷 후면 카메라 목록: ${backCameras.map((c) => cameras.indexOf(c)).toList()}');
       
+      // 전면 카메라 우선 선택 (사용자 경험 최우선)
       if (frontCameras.isNotEmpty) {
         _selectedCameraIndex = cameras.indexOf(frontCameras.first);
-        print('📷 전면 카메라 선택됨: 인덱스 $_selectedCameraIndex (가장 낮은 인덱스)');
+        print('📷 전면 카메라 선택됨: 인덱스 $_selectedCameraIndex (사용자 경험 최우선)');
       } else if (backCameras.isNotEmpty) {
         _selectedCameraIndex = cameras.indexOf(backCameras.first);
         print('📷 후면 카메라 선택됨: 인덱스 $_selectedCameraIndex (전면 카메라 없음)');
@@ -196,11 +197,11 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
       print('   - 방향: ${selectedCamera.lensDirection}');
       print('   - 인덱스: $_selectedCameraIndex');
       
-      // 카메라 컨트롤러 초기화 (해상도를 medium으로 설정하여 왜곡 최소화)
+      // 카메라 컨트롤러 초기화 (해상도를 low로 설정하여 왜곡 최소화)
       print('📷 카메라 컨트롤러 초기화: ${selectedCamera.name}');
       _cameraController = CameraController(
         selectedCamera,
-        ResolutionPreset.medium, // high 대신 medium 사용하여 왜곡 최소화
+        ResolutionPreset.low, // medium 대신 low 사용하여 왜곡 최소화
         enableAudio: false, // 오디오는 별도로 처리
         imageFormatGroup: ImageFormatGroup.bgra8888, // iOS에서 안정적인 포맷
       );
@@ -274,8 +275,20 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
       await _startCameraStream();
     }
     
-    // 오디오 녹음 시작
-    await _audioManager.startRecording();
+    // STT 시작 (실시간 음성 인식만 사용, 녹음 제거)
+    final sttSuccess = await _audioManager.startSTTOnly(
+      localeId: 'ko_KR',
+      listenFor: const Duration(seconds: 10), // 30초에서 10초로 단축
+      pauseFor: const Duration(seconds: 2),   // 3초에서 2초로 단축
+    );
+    if (sttSuccess) {
+      print('✅ STT 시작 성공 - 실시간 음성 인식 활성화');
+      setState(() {
+        _isListening = true;
+      });
+    } else {
+      print('❌ STT 시작 실패 - 음성 인식 없이 진행');
+    }
     
     // 30초 세션 타이머 시작
     _sessionTimer = Timer(const Duration(seconds: 30), () async {
@@ -298,7 +311,7 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
       _statusMessage = '실시간 분석 중... (30초)';
     });
     
-    print('✅ 세션 시작 완료 - 30초 동안 5초마다 분석 실행');
+    print('✅ 세션 시작 완료 - 30초 동안 5초마다 분석 실행 (STT만 사용)');
   }
 
   /// 카메라 스트림 시작 (프레임 캡처용)
@@ -528,8 +541,11 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
       _showCameraPreview = false;
     });
     
-    // 오디오 녹음 중지
-    await _audioManager.stopRecording();
+    // STT 중지 (녹음은 사용하지 않음)
+    await _audioManager.stopSTT();
+    setState(() {
+      _isListening = false;
+    });
     
     // EmotionProvider 세션 종료
     final emotionProvider = Provider.of<EmotionProvider>(context, listen: false);
@@ -617,26 +633,20 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
       
       // 이미지 데이터는 이미 스트림에서 캡처되어 있음
       final imageData = emotionProvider.currentImageData;
-      final audioData = emotionProvider.currentAudioData;
       final textData = emotionProvider.currentTextData;
       
       print('📊 [Session] 분석할 데이터 상태:');
       print('   - 이미지 데이터: ${imageData != null ? "있음 (${imageData.length} bytes)" : "없음"}');
-      print('   - 오디오 데이터: ${audioData != null ? "있음 (${audioData.length} bytes)" : "없음"}');
-      print('   - 텍스트 데이터: ${textData != null ? "있음" : "없음"}');
+      print('   - 텍스트 데이터: ${textData != null ? "있음: $textData" : "없음"}');
+      print('   - STT 인식 텍스트: ${_recognizedText.isNotEmpty ? "있음: $_recognizedText" : "없음"}');
       
-      // 오디오 데이터가 없으면 현재 녹음된 오디오 가져오기
-      String? finalAudioData = audioData;
-      if (finalAudioData == null) {
-        print('🎤 [Session] 오디오 데이터가 없어서 현재 녹음된 오디오 가져오기 시도');
-        finalAudioData = await _audioManager.getCurrentAudioData();
-        if (finalAudioData != null) {
-          emotionProvider.setAudioData(finalAudioData);
-          print('🎤 [Session] 현재 녹음된 오디오 데이터 설정 완료');
-        }
+      // STT 텍스트가 있으면 EmotionProvider에 설정 (우선순위)
+      if (_recognizedText.isNotEmpty) {
+        emotionProvider.setTextData(_recognizedText);
+        print('📝 [Session] STT 텍스트 데이터 설정: $_recognizedText');
       }
       
-      // EmotionProvider의 멀티모달 분석 실행
+      // EmotionProvider의 멀티모달 분석 실행 (이미지 + 텍스트만)
       print('🚀 [Session] EmotionProvider 멀티모달 분석 호출');
       final dataPoint = await emotionProvider.performMultimodalAnalysis(
         sessionId: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -674,6 +684,8 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
   void _processRecognizedText(String text) {
     if (text.isEmpty) return;
     
+    print('📝 [Session] STT 텍스트 처리: "$text"');
+    
     setState(() {
       _recognizedText = text;
     });
@@ -681,12 +693,13 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
     // EmotionProvider에 텍스트 데이터 전달
     final emotionProvider = Provider.of<EmotionProvider>(context, listen: false);
     emotionProvider.setTextData(text);
-    print('📝 텍스트 데이터 수집: $text');
+    print('📝 [Session] 텍스트 데이터 수집: $text');
     
     // 텍스트 디바운스
     _textDebounceTimer?.cancel();
     _textDebounceTimer = Timer(const Duration(seconds: 1), () {
       if (_isSessionActive) {
+        print('🔄 [Session] STT 텍스트로 인한 분석 실행');
         _performMultimodalAnalysis();
       }
     });
@@ -753,16 +766,16 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
       right: 20,
       bottom: 120,
       child: Container(
-        width: 120, // 크기 증가
-        height: 120, // 크기 증가
+        width: 80, // 작은 크기로 조정
+        height: 80, // 작은 크기로 조정
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 3),
+          border: Border.all(color: Colors.white, width: 2),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.4),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
+              color: Colors.black.withOpacity(0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
             ),
           ],
         ),
@@ -787,14 +800,14 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
       );
     }
     
-    // 중앙 크롭 + 비율 유지로 왜곡 최소화
+    // 강력한 중앙 크롭으로 왜곡 최소화
     Widget cameraWidget = ClipRect(
       child: Align(
         alignment: Alignment.center,
-        widthFactor: 0.8, // 중앙 80%만 사용 (왜곡이 심한 가장자리 제거)
-        heightFactor: 0.8,
+        widthFactor: 0.4, // 중앙 40%만 사용
+        heightFactor: 0.4,
         child: AspectRatio(
-          aspectRatio: _cameraController!.value.aspectRatio,
+          aspectRatio: 1.0, // 1:1 비율로 강제
           child: CameraPreview(_cameraController!),
         ),
       ),
@@ -832,8 +845,8 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
     Widget cameraWidget = ClipRect(
       child: Align(
         alignment: Alignment.center,
-        widthFactor: 0.8, // 중앙 80%만 사용 (왜곡이 심한 가장자리 제거)
-        heightFactor: 0.8,
+        widthFactor: 0.6, // 중앙 60%만 사용 (왜곡이 심한 가장자리 제거)
+        heightFactor: 0.6,
         child: AspectRatio(
           aspectRatio: _cameraController!.value.aspectRatio,
           child: CameraPreview(_cameraController!),
@@ -862,32 +875,105 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.white.withOpacity(0.2)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 상태 인디케이터
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: _isSessionActive 
-                ? (_isAnalyzing ? Colors.blue : Colors.green)
-                : Colors.grey,
-              shape: BoxShape.circle,
-            ),
+          Row(
+            children: [
+              // 상태 인디케이터
+              Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: _isSessionActive 
+                    ? (_isAnalyzing ? Colors.blue : Colors.green)
+                    : Colors.grey,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 12),
+              
+              // 상태 메시지
+              Expanded(
+                child: Text(
+                  _statusMessage,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              
+              // STT 상태 표시
+              if (_isSessionActive)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _isListening ? Colors.green.withOpacity(0.2) : Colors.grey.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: _isListening ? Colors.green : Colors.grey,
+                      width: 1,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.mic,
+                        color: _isListening ? Colors.green : Colors.grey,
+                        size: 12,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _isListening ? '음성인식' : '대기',
+                        style: TextStyle(
+                          color: _isListening ? Colors.green : Colors.grey,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
           ),
-          const SizedBox(width: 12),
           
-          // 상태 메시지
-          Expanded(
-            child: Text(
-              _statusMessage,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
+          // 인식된 텍스트 표시
+          if (_isSessionActive && _recognizedText.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue.withOpacity(0.3)),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.text_fields,
+                    color: Colors.blue,
+                    size: 14,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _recognizedText,
+                      style: const TextStyle(
+                        color: Colors.blue,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
+          ],
         ],
       ),
     );

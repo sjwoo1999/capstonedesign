@@ -22,7 +22,7 @@ class MultimodalAnalysisService {
     print('📡 Multimodal API 서버 주소 설정됨: $_baseUrl');
   }
 
-  /// 완전한 멀티모달 분석 (영상 + 음성 + 텍스트)
+  /// 멀티모달 분석 실행
   Future<MultimodalDataPoint> analyzeMultimodal({
     String? base64Image,
     String? base64Audio,
@@ -46,7 +46,7 @@ class MultimodalAnalysisService {
       futures.add(_analyzeVisual(base64Image).then((data) => visualData = data));
     }
 
-    // 2. 음성 분석
+    // 2. 음성 분석 (오디오 데이터가 있는 경우에만)
     if (base64Audio != null && base64Audio.isNotEmpty) {
       futures.add(_analyzeAudio(base64Audio).then((data) => audioData = data));
     }
