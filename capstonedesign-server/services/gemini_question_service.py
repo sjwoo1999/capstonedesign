@@ -187,7 +187,7 @@ class GeminiQuestionService:
             if conversation_history:
                 history_text = self.build_conversation_history(conversation_history)
             
-            # 프롬프트 구성
+            # 프롬프트 구성 (전문가: 접두사 제거)
             prompt = f"""
 당신은 감정 관리 전문가입니다. 사용자의 메시지에 대해 공감적이고 도움이 되는 응답을 해주세요.
 
@@ -195,15 +195,29 @@ class GeminiQuestionService:
 
 사용자: {user_message}
 
-전문가:
+응답:
 """
             
             # Gemini API 호출
             response = self.model.generate_content(prompt)
             
+            # 응답에서 접두사 제거
+            response_text = response.text.strip()
+            
+            # "전문가:", "AI:", "Assistant:", "응답:" 등의 접두사 제거
+            prefixes_to_remove = [
+                "전문가:", "AI:", "Assistant:", "응답:", "답변:", 
+                "Expert:", "Counselor:", "Therapist:", "Advisor:"
+            ]
+            
+            for prefix in prefixes_to_remove:
+                if response_text.startswith(prefix):
+                    response_text = response_text[len(prefix):].strip()
+                    break
+            
             return {
                 'success': True,
-                'response': response.text.strip(),
+                'response': response_text,
                 'model': 'gemini-2.5-flash'
             }
             
