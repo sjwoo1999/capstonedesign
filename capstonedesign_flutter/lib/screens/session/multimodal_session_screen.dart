@@ -69,30 +69,24 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
+    print('🗑️ [Session] 멀티모달 세션 화면 dispose 시작');
     
     // 모든 타이머 정리
     _analysisTimer?.cancel();
     _textDebounceTimer?.cancel();
     _sessionTimer?.cancel();
     
-    // 카메라 스트림 중지
-    if (_cameraController != null && _cameraController!.value.isStreamingImages) {
-      try {
-        _cameraController!.stopImageStream();
-        print('📷 카메라 스트림 정리 완료');
-      } catch (e) {
-        print('❌ 카메라 스트림 정리 실패: $e');
-      }
-    }
-    
-    // 카메라 컨트롤러 정리
+    // 카메라 정리
     _cameraController?.dispose();
-    _cameraController = null;
     
     // 오디오 매니저 정리
-    _audioManager.dispose();
+    _audioManager.stopSTT();
     
+    // STT 콜백 제거
+    _audioManager.onTextRecognized = null;
+    _audioManager.onError = null;
+    
+    print('🗑️ [Session] 멀티모달 세션 화면 dispose 완료');
     super.dispose();
   }
 
@@ -262,25 +256,15 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
     
     print('🚀 멀티모달 세션 시작');
     
+    // EmotionProvider 세션 시작
     final emotionProvider = Provider.of<EmotionProvider>(context, listen: false);
     emotionProvider.startSession();
     
-    // 카메라 프리뷰 시작
-    if (_cameraController != null && _isCameraInitialized) {
-      setState(() {
-        _showCameraPreview = true;
-      });
-      
-      // 카메라 스트림 시작 (프레임 캡처용)
-      await _startCameraStream();
-    }
+    // 카메라 스트림 시작
+    await _startCameraStream();
     
-    // STT 시작 (실시간 음성 인식만 사용, 녹음 제거)
-    final sttSuccess = await _audioManager.startSTTOnly(
-      localeId: 'ko_KR',
-      listenFor: const Duration(seconds: 10), // 30초에서 10초로 단축
-      pauseFor: const Duration(seconds: 2),   // 3초에서 2초로 단축
-    );
+    // STT 시작
+    final sttSuccess = await _audioManager.startSTT();
     if (sttSuccess) {
       print('✅ STT 시작 성공 - 실시간 음성 인식 활성화');
       setState(() {
@@ -298,17 +282,18 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
     
     // 실시간 분석 타이머 시작 (5초마다)
     _analysisTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
-      if (_isSessionActive) {
+      if (_isSessionActive && mounted) {
         print('🔄 주기적 분석 실행 (${DateTime.now().second}초)');
         await _performMultimodalAnalysis();
       } else {
+        print('⚠️ 주기적 분석 중단: 세션=${_isSessionActive}, mounted=$mounted');
         timer.cancel();
       }
     });
     
     setState(() {
       _isSessionActive = true;
-      _statusMessage = '실시간 분석 중... (30초)';
+      _statusMessage = '실시간 분석 시작... (30초 세션)';
     });
     
     print('✅ 세션 시작 완료 - 30초 동안 5초마다 분석 실행 (STT만 사용)');
@@ -518,13 +503,27 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
 
   /// 세션 중지
   Future<void> _stopSession() async {
-    if (!_isSessionActive) return;
-    
     print('🏁 멀티모달 세션 종료');
     
+    // 세션 상태 즉시 변경
+    setState(() {
+      _isSessionActive = false;
+      _isAnalyzing = false;
+    });
+    
+    // 모든 타이머 즉시 취소
     _analysisTimer?.cancel();
-    _textDebounceTimer?.cancel();
+    _analysisTimer = null;
     _sessionTimer?.cancel();
+    _sessionTimer = null;
+    _textDebounceTimer?.cancel();
+    _textDebounceTimer = null;
+    
+    // STT 중지
+    await _audioManager.stopSTT();
+    setState(() {
+      _isListening = false;
+    });
     
     // 카메라 스트림 중지
     if (_cameraController != null && _cameraController!.value.isStreamingImages) {
@@ -536,23 +535,11 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
       }
     }
     
-    // 카메라 프리뷰 중지
-    setState(() {
-      _showCameraPreview = false;
-    });
-    
-    // STT 중지 (녹음은 사용하지 않음)
-    await _audioManager.stopSTT();
-    setState(() {
-      _isListening = false;
-    });
-    
     // EmotionProvider 세션 종료
     final emotionProvider = Provider.of<EmotionProvider>(context, listen: false);
     final sessionResult = emotionProvider.endSession();
     
     setState(() {
-      _isSessionActive = false;
       _statusMessage = '세션 종료됨';
       _analysisSummary = sessionResult.feedback;
     });
@@ -609,24 +596,38 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
       });
       
       setState(() {
-        _statusMessage = '실시간 분석 중... (30초)';
+        _statusMessage = '실시간 분석 재개... (${_sessionData.length}회 완료)';
       });
     }
   }
 
   /// 멀티모달 분석 수행
   Future<void> _performMultimodalAnalysis() async {
-    if (_isAnalyzing) {
-      print('⚠️ 이미 분석 중입니다. 중복 실행 방지');
+    // 세션이 비활성화되었거나 이미 분석 중이면 중단
+    if (!_isSessionActive || _isAnalyzing) {
+      print('⚠️ 분석 중단: 세션=${_isSessionActive}, 분석중=${_isAnalyzing}');
+      return;
+    }
+    
+    // mounted 체크 추가
+    if (!mounted) {
+      print('⚠️ 위젯이 dispose됨, 분석 취소');
       return;
     }
     
     setState(() {
       _isAnalyzing = true;
+      _statusMessage = '새로운 분석 중...';
     });
     
     try {
       print('🔍 [Session] 멀티모달 분석 실행 시작');
+      
+      // 세션 상태 재확인
+      if (!_isSessionActive) {
+        print('⚠️ 세션이 중단됨, 분석 취소');
+        return;
+      }
       
       // EmotionProvider에서 현재 데이터 가져오기
       final emotionProvider = Provider.of<EmotionProvider>(context, listen: false);
@@ -640,43 +641,58 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
       print('   - 텍스트 데이터: ${textData != null ? "있음: $textData" : "없음"}');
       print('   - STT 인식 텍스트: ${_recognizedText.isNotEmpty ? "있음: $_recognizedText" : "없음"}');
       
-      // STT 텍스트가 있으면 EmotionProvider에 설정 (우선순위)
-      if (_recognizedText.isNotEmpty) {
+      // STT 텍스트가 있으면 EmotionProvider에 설정
+      if (_recognizedText.isNotEmpty && textData != _recognizedText) {
         emotionProvider.setTextData(_recognizedText);
         print('📝 [Session] STT 텍스트 데이터 설정: $_recognizedText');
       }
       
-      // EmotionProvider의 멀티모달 분석 실행 (이미지 + 텍스트만)
-      print('🚀 [Session] EmotionProvider 멀티모달 분석 호출');
-      final dataPoint = await emotionProvider.performMultimodalAnalysis(
-        sessionId: DateTime.now().millisecondsSinceEpoch.toString(),
-        metadata: {
-          'timestamp': DateTime.now().toIso8601String(),
-          'sound_level': _currentSoundLevel,
-        },
-      );
+      // 세션 상태 최종 확인
+      if (!_isSessionActive) {
+        print('⚠️ 세션이 중단됨, 분석 취소');
+        return;
+      }
       
-      if (dataPoint != null) {
-        _sessionData.add(dataPoint);
-        
-        setState(() {
-          _currentEmotion = dataPoint.emotion ?? 'neutral';
-          _currentConfidence = dataPoint.confidence ?? 0.0;
-        });
-        
-        print('✅ [Session] 멀티모달 분석 완료: ${dataPoint.emotion} (${(dataPoint.confidence ?? 0.0 * 100).toStringAsFixed(1)}%)');
+      // 멀티모달 분석 실행
+      print('🚀 [Session] EmotionProvider 멀티모달 분석 호출');
+      final result = await emotionProvider.performMultimodalAnalysis();
+      
+      // 세션 상태 재확인
+      if (!mounted || !_isSessionActive) {
+        print('⚠️ 세션이 중단됨, 결과 처리 취소');
+        return;
+      }
+      
+      if (result != null) {
+        print('✅ [Session] 멀티모달 분석 완료: ${result.emotion} (${((result.confidence ?? 0.0) * 100).toStringAsFixed(1)}%)');
+        // 세션 데이터에 결과 추가
+        _sessionData.add(result);
         print('📊 [Session] 세션 데이터 포인트 추가됨: 총 ${_sessionData.length}개');
-      } else {
-        print('❌ [Session] 멀티모달 분석 결과가 null입니다');
+        
+        // 분석 완료 후 상태 메시지 업데이트
+        setState(() {
+          _currentEmotion = result.emotion ?? 'neutral';
+          _currentConfidence = result.confidence ?? 0.0;
+          _lastAnalyzedTime = DateTime.now();
+          _statusMessage = '실시간 분석 중... (${_sessionData.length}회 완료)';
+        });
       }
       
     } catch (e) {
       print('❌ [Session] 멀티모달 분석 실패: $e');
+      if (mounted && _isSessionActive) {
+        setState(() {
+          _statusMessage = '분석 실패 - 재시도 중...';
+        });
+      }
     } finally {
-      setState(() {
-        _isAnalyzing = false;
-      });
-      print('🏁 [Session] 분석 상태 해제됨');
+      // mounted 체크 후 setState 호출
+      if (mounted) {
+        setState(() {
+          _isAnalyzing = false;
+        });
+        print('🏁 [Session] 분석 상태 해제됨');
+      }
     }
   }
 

@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import '../models/multimodal_data_point.dart';
+import '../models/emotion_result.dart';
 import 'emotion_api_services.dart';
 
 /// 멀티모달 감정 분석 서비스
@@ -20,6 +21,18 @@ class MultimodalAnalysisService {
   static void setBaseUrl(String url) {
     _baseUrl = url;
     print('📡 Multimodal API 서버 주소 설정됨: $_baseUrl');
+  }
+
+  /// VAD 데이터 파싱
+  Map<String, double> _parseVAD(dynamic vadData) {
+    if (vadData is Map<String, dynamic>) {
+      return {
+        'valence': (vadData['valence'] ?? 0.5).toDouble(),
+        'arousal': (vadData['arousal'] ?? 0.5).toDouble(),
+        'dominance': (vadData['dominance'] ?? 0.5).toDouble(),
+      };
+    }
+    return {'valence': 0.5, 'arousal': 0.5, 'dominance': 0.5};
   }
 
   /// 멀티모달 분석 실행
@@ -43,7 +56,7 @@ class MultimodalAnalysisService {
 
     // 1. 영상 분석
     if (base64Image != null && base64Image.isNotEmpty) {
-      futures.add(_analyzeVisual(base64Image).then((data) => visualData = data));
+      futures.add(_analyzeImage(base64Image).then((data) => visualData = data));
     }
 
     // 2. 음성 분석 (오디오 데이터가 있는 경우에만)
@@ -75,38 +88,65 @@ class MultimodalAnalysisService {
     return multimodalData;
   }
 
-  /// 영상 분석
-  Future<ModalityData?> _analyzeVisual(String base64Image) async {
-    try {
-      print('📷 [Multimodal] 영상 분석 시작');
-      print('📷 [Multimodal] 영상 데이터 크기: ${base64Image.length} bytes');
-      
-      final response = await _emotionApiService.sendImageForAnalysis(base64Image);
-      
-      print('📊 [Multimodal] 영상 분석 응답 키: ${response.keys.toList()}');
-      
-      if (response.containsKey('face_emotion') && response.containsKey('final_vad')) {
-        final vad = response['final_vad'] as Map<String, dynamic>;
-        final result = ModalityData(
-          valence: vad['valence']?.toDouble(),
-          arousal: vad['arousal']?.toDouble(),
-          dominance: vad['dominance']?.toDouble(),
-          emotion: response['face_emotion'],
-          confidence: response['confidence']?.toDouble() ?? 0.8,
-          rawData: base64Image,
-        );
+  /// 이미지 분석 요청
+  Future<ModalityData> _analyzeImage(String base64Image) async {
+    const maxRetries = 3;
+    const timeoutDuration = Duration(seconds: 3); // 5초에서 3초로 단축
+    
+    for (int attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        print('🚀 이미지 분석 요청 시도 $attempt/$maxRetries');
         
-        print('✅ [Multimodal] 영상 분석 성공: ${result.emotion} (${result.confidence})');
-        return result;
-      } else {
-        print('❌ [Multimodal] 영상 분석 응답에 필요한 키가 없음');
-        print('   - face_emotion: ${response.containsKey('face_emotion')}');
-        print('   - final_vad: ${response.containsKey('final_vad')}');
+        final response = await http.post(
+          Uri.parse('$_baseUrl/analyze_multimodal_emotion'),
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: jsonEncode({
+            'image': base64Image,
+            'timestamp': DateTime.now().toIso8601String(),
+          }),
+        ).timeout(timeoutDuration); // 타임아웃 설정
+        
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          print('✅ 이미지 분석 성공');
+          
+          final vad = _parseVAD(data['face_vad']);
+          return ModalityData(
+            valence: vad['valence'],
+            arousal: vad['arousal'],
+            dominance: vad['dominance'],
+            emotion: data['face_emotion'] ?? 'neutral',
+            confidence: (data['confidence'] ?? 0.5).toDouble(),
+            rawData: base64Image,
+          );
+        } else {
+          print('❌ 이미지 분석 실패: ${response.statusCode}');
+          throw Exception('HTTP ${response.statusCode}');
+        }
+        
+      } catch (e) {
+        print('❗ 이미지 분석 서버 연결 실패 [시도 $attempt/$maxRetries]: $e');
+        
+        if (attempt == maxRetries) {
+          print('❌ 최대 재시도 횟수 초과, Mock 이미지 VAD 데이터 사용');
+          return ModalityData(
+            valence: 0.5,
+            arousal: 0.5,
+            dominance: 0.5,
+            emotion: 'neutral',
+            confidence: 0.5,
+            rawData: base64Image,
+          );
+        }
+        
+        // 재시도 전 짧은 대기
+        await Future.delayed(Duration(milliseconds: 300 * attempt));
       }
-    } catch (e) {
-      print('❌ [Multimodal] 영상 분석 실패: $e');
     }
-    return null;
+    
+    throw Exception('이미지 분석 실패');
   }
 
   /// 음성 분석

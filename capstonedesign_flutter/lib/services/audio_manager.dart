@@ -221,8 +221,8 @@ class AudioManager {
   /// STT만 사용하는 모드 (VAD 충돌 방지)
   Future<bool> startSTTOnly({
     required String localeId,
-    Duration listenFor = const Duration(seconds: 30),
-    Duration pauseFor = const Duration(seconds: 3),
+    Duration listenFor = const Duration(seconds: 10),
+    Duration pauseFor = const Duration(seconds: 2),
   }) async {
     if (!_isInitialized) {
       await initialize();
@@ -257,7 +257,7 @@ class AudioManager {
         pauseFor: pauseFor,
         partialResults: true,
         cancelOnError: false,
-        listenMode: stt.ListenMode.dictation,
+        listenMode: stt.ListenMode.confirmation,
         localeId: localeId,
         onSoundLevelChange: (level) {
           // VAD 충돌 방지를 위해 소리 레벨은 별도로 처리하지 않음
