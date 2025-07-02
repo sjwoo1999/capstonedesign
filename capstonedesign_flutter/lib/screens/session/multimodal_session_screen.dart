@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:provider/provider.dart';
 import 'package:camera/camera.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -15,6 +16,16 @@ import 'package:image/image.dart' as img;
 import '../analysis/analysis_result_screen.dart';
 import '../analysis/analysis_pending_screen.dart';
 
+// Make this function available to all classes in this file
+List<Color> getSfHighlightColors(Color base) {
+  return [
+    base,
+    Colors.white,
+    Colors.cyanAccent,
+    Colors.purpleAccent,
+  ];
+}
+
 /// 멀티모달 감정 분석 세션 화면
 /// 영상, 음성, 텍스트 세 가지 모달리티를 통합하여 실시간 감정 분석
 class MultimodalSessionScreen extends StatefulWidget {
@@ -25,7 +36,7 @@ class MultimodalSessionScreen extends StatefulWidget {
 }
 
 class _MultimodalSessionScreenState extends State<MultimodalSessionScreen> 
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, TickerProviderStateMixin {
   
   // 세션 상태
   bool _isSessionActive = false;
@@ -60,16 +71,48 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
   bool _showCameraPreview = false;
   DateTime? _lastAnalyzedTime;
 
+  // 애니메이션 컨트롤러
+  late AnimationController _waveController;
+  late AnimationController _particleController;
+  late AnimationController _emotionController;
+  
+  // 파티클 시스템
+  final List<Particle> _particles = [];
+  final math.Random _random = math.Random();
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    
+    // 애니메이션 컨트롤러 초기화
+    _waveController = AnimationController(
+      duration: const Duration(seconds: 3),
+      vsync: this,
+    )..repeat();
+    
+    _particleController = AnimationController(
+      duration: const Duration(seconds: 2),
+      vsync: this,
+    )..repeat();
+    
+    _emotionController = AnimationController(
+      duration: const Duration(seconds: 2),
+      vsync: this,
+    )..repeat();
+    
     _initializeSession();
+    _generateParticles();
   }
 
   @override
   void dispose() {
     print('🗑️ [Session] 멀티모달 세션 화면 dispose 시작');
+    
+    // 애니메이션 컨트롤러 정리
+    _waveController.dispose();
+    _particleController.dispose();
+    _emotionController.dispose();
     
     // 모든 타이머 정리
     _analysisTimer?.cancel();
@@ -259,6 +302,11 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
     // EmotionProvider 세션 시작
     final emotionProvider = Provider.of<EmotionProvider>(context, listen: false);
     emotionProvider.startSession();
+    
+    // 카메라 프리뷰 표시 활성화
+    setState(() {
+      _showCameraPreview = true;
+    });
     
     // 카메라 스트림 시작
     await _startCameraStream();
@@ -509,6 +557,7 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
     setState(() {
       _isSessionActive = false;
       _isAnalyzing = false;
+      _showCameraPreview = false;
     });
     
     // 모든 타이머 즉시 취소
@@ -676,6 +725,11 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
           _lastAnalyzedTime = DateTime.now();
           _statusMessage = '실시간 분석 중... (${_sessionData.length}회 완료)';
         });
+        
+        // 감정 변화 시 애니메이션 트리거
+        _emotionController.forward().then((_) {
+          _emotionController.reverse();
+        });
       }
       
     } catch (e) {
@@ -724,33 +778,27 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          // 메인 배경 (깔끔한 그라데이션)
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFF1a1a1a),
-                  Color(0xFF000000),
-                ],
-              ),
-            ),
-          ),
-          
-          // 메인 콘텐츠
-          SafeArea(
-            child: Column(
+      body: SafeArea(
+        child: Stack(
+          children: [
+            // 3D 배경 레이어
+            _build3DBackground(),
+            
+            // 파티클 시스템
+            _buildParticleSystem(),
+            
+            // 메인 컨텐츠
+            Column(
               children: [
-                // 상단 상태 바
+                // 상단 상태바
                 _buildTopStatusBar(),
                 
                 const Spacer(),
                 
-                // 중앙 안내 메시지
+                // 중앙 감정 아이콘 (세션 활성화 시)
+                if (_isSessionActive) _buildEmotionCenter(),
+                
+                // 중앙 가이드 (세션 비활성화 시)
                 if (!_isSessionActive) _buildCenterGuide(),
                 
                 const Spacer(),
@@ -759,14 +807,99 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
                 _buildBottomControls(),
               ],
             ),
+            
+            // 우측 하단 작은 카메라 프리뷰 (원형)
+            if (_showCameraPreview && _isCameraInitialized && _cameraController != null)
+              _buildSmallCameraPreview(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 3D 배경 위젯 (이제 solid black)
+  Widget _build3DBackground() {
+    return Container(
+      color: Colors.black,
+    );
+  }
+
+  /// 파티클 시스템 위젯
+  Widget _buildParticleSystem() {
+    return ParticleSystem(
+      particles: _particles,
+      animation: _particleController,
+      particleColor: _getEmotionColor(_currentEmotion),
+    );
+  }
+
+  /// 중앙 감정 아이콘
+  Widget _buildEmotionCenter() {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 감정 아이콘
+          HoloSphere(
+            color: _getEmotionColor(_currentEmotion),
+            size: 180,
+            controller: _emotionController,
           ),
+          const SizedBox(height: 24),
           
-          // 우측 하단 작은 카메라 프리뷰 (원형)
-          if (_showCameraPreview && _isCameraInitialized && _cameraController != null)
-            _buildSmallCameraPreview(),
+          // 감정 텍스트
+          Text(
+            _getEmotionText(_currentEmotion),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+              shadows: [
+                Shadow(
+                  color: Colors.black54,
+                  offset: Offset(2, 2),
+                  blurRadius: 4,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          
+          // 신뢰도 표시
+          Text(
+            '${(_currentConfidence * 100).toStringAsFixed(1)}%',
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.8),
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  /// 감정 텍스트 가져오기
+  String _getEmotionText(String emotion) {
+    switch (emotion.toLowerCase()) {
+      case 'happy':
+      case 'joy':
+        return '기쁨 😊';
+      case 'sad':
+      case 'sadness':
+        return '슬픔 😢';
+      case 'angry':
+      case 'anger':
+        return '분노 😠';
+      case 'fear':
+        return '두려움 😨';
+      case 'surprise':
+        return '놀람 😲';
+      case 'disgust':
+        return '혐오 🤢';
+      default:
+        return '중립 😐';
+    }
   }
 
   /// 작은 카메라 프리뷰 위젯
@@ -1084,6 +1217,231 @@ class _MultimodalSessionScreenState extends State<MultimodalSessionScreen>
       ),
     );
   }
+
+  /// 파티클 생성 (배경용, 중앙 100px 이내는 생성 안 함)
+  void _generateParticles() {
+    _particles.clear();
+    final center = Offset(200, 400); // 대략 화면 중앙
+    for (int i = 0; i < 15; i++) {
+      double x, y;
+      do {
+        x = _random.nextDouble() * 400;
+        y = _random.nextDouble() * 800;
+      } while ((Offset(x, y) - center).distance < 100);
+      _particles.add(Particle(
+        x: x,
+        y: y,
+        speed: 0.1 + _random.nextDouble() * 0.2,
+        size: 1.0 + _random.nextDouble() * 1.5,
+        opacity: 0.08 + _random.nextDouble() * 0.1,
+      ));
+    }
+  }
+
+  /// 감정에 따른 색상 가져오기
+  Color _getEmotionColor(String emotion) {
+    switch (emotion.toLowerCase()) {
+      case 'happy':
+      case 'joy':
+        return Colors.yellow;
+      case 'sad':
+      case 'sadness':
+        return Colors.blue;
+      case 'angry':
+      case 'anger':
+        return Colors.red;
+      case 'fear':
+        return Colors.purple;
+      case 'surprise':
+        return Colors.orange;
+      case 'disgust':
+        return Colors.green;
+      default:
+        return Colors.white;
+    }
+  }
+}
+
+/// 파티클 클래스
+class Particle {
+  double x;
+  double y;
+  double speed;
+  double size;
+  double opacity;
+  double angle;
+
+  Particle({
+    required this.x,
+    required this.y,
+    required this.speed,
+    required this.size,
+    required this.opacity,
+  }) : angle = 0.0;
+
+  void update(double deltaTime) {
+    angle += speed * deltaTime;
+    y -= speed * deltaTime * 5; // 더 느리게
+    if (y < -20) {
+      y = 820;
+      x = math.Random().nextDouble() * 400;
+    }
+  }
+}
+
+/// 파티클 시스템 위젯
+class ParticleSystem extends StatelessWidget {
+  final List<Particle> particles;
+  final Animation<double> animation;
+  final Color particleColor;
+
+  const ParticleSystem({
+    super.key,
+    required this.particles,
+    required this.animation,
+    required this.particleColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, child) {
+        return CustomPaint(
+          painter: ParticlePainter(
+            particles,
+            particleColor,
+          ),
+          size: Size.infinite,
+        );
+      },
+    );
+  }
+}
+
+/// 파티클 그리기
+class ParticlePainter extends CustomPainter {
+  final List<Particle> particles;
+  final Color particleColor;
+
+  ParticlePainter(this.particles, this.particleColor);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = particleColor
+      ..style = PaintingStyle.fill;
+
+    for (final particle in particles) {
+      particle.update(0.016); // 60fps 기준
+      
+      paint.color = particleColor.withOpacity(particle.opacity);
+      
+      canvas.drawCircle(
+        Offset(particle.x, particle.y),
+        particle.size,
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+/// 감정 아이콘 위젯
+class EmotionIcon extends StatelessWidget {
+  final String emotion;
+  final Animation<double> animation;
+  final double confidence;
+
+  const EmotionIcon({
+    super.key,
+    required this.emotion,
+    required this.animation,
+    required this.confidence,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, child) {
+        return Transform.scale(
+          scale: 1.0 + (animation.value * 0.2),
+          child: Container(
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                colors: [
+                  _getEmotionColor(emotion).withOpacity(0.8),
+                  _getEmotionColor(emotion).withOpacity(0.3),
+                ],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: _getEmotionColor(emotion).withOpacity(0.5),
+                  blurRadius: 20,
+                  spreadRadius: 5,
+                ),
+              ],
+            ),
+            child: Icon(
+              _getEmotionIcon(emotion),
+              color: Colors.white,
+              size: 60,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Color _getEmotionColor(String emotion) {
+    switch (emotion.toLowerCase()) {
+      case 'happy':
+      case 'joy':
+        return Colors.yellow;
+      case 'sad':
+      case 'sadness':
+        return Colors.blue;
+      case 'angry':
+      case 'anger':
+        return Colors.red;
+      case 'fear':
+        return Colors.purple;
+      case 'surprise':
+        return Colors.orange;
+      case 'disgust':
+        return Colors.green;
+      default:
+        return Colors.white;
+    }
+  }
+
+  IconData _getEmotionIcon(String emotion) {
+    switch (emotion.toLowerCase()) {
+      case 'happy':
+      case 'joy':
+        return Icons.sentiment_very_satisfied;
+      case 'sad':
+      case 'sadness':
+        return Icons.sentiment_very_dissatisfied;
+      case 'angry':
+      case 'anger':
+        return Icons.sentiment_very_dissatisfied;
+      case 'fear':
+        return Icons.sentiment_dissatisfied;
+      case 'surprise':
+        return Icons.sentiment_satisfied_alt;
+      case 'disgust':
+        return Icons.sentiment_neutral;
+      default:
+        return Icons.psychology;
+    }
+  }
 }
 
 // 음성 파형을 그리는 CustomPainter
@@ -1123,6 +1481,209 @@ class SoundWavePainter extends CustomPainter {
     }
   }
 
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+/// SF 홀로그램 구체 위젯
+class HoloSphere extends StatefulWidget {
+  final Color color;
+  final double size;
+  final AnimationController controller;
+
+  const HoloSphere({
+    super.key,
+    required this.color,
+    required this.size,
+    required this.controller,
+  });
+
+  @override
+  State<HoloSphere> createState() => _HoloSphereState();
+}
+
+class _HoloSphereState extends State<HoloSphere> {
+  late List<_EnergyLine> _lines;
+  late List<_Particle> _particles;
+  final math.Random _random = math.Random();
+
+  @override
+  void initState() {
+    super.initState();
+    _lines = List.generate(7, (i) => _EnergyLine(widget.size, _random));
+    _particles = List.generate(30, (i) => _Particle(widget.size, _random));
+    widget.controller.addListener(() {
+      setState(() {});
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: widget.size,
+      height: widget.size,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Glow
+          CustomPaint(
+            size: Size(widget.size, widget.size),
+            painter: _GlowSpherePainter(widget.color),
+          ),
+          // Energy lines
+          ..._lines.map((line) => CustomPaint(
+                size: Size(widget.size, widget.size),
+                painter: _EnergyLinePainter(line, widget.color, widget.controller.value),
+              )),
+          // Particles
+          CustomPaint(
+            size: Size(widget.size, widget.size),
+            painter: _ParticleSpherePainter(_particles, widget.color, widget.controller.value),
+          ),
+          // Core glow
+          CustomPaint(
+            size: Size(widget.size, widget.size),
+            painter: _CoreGlowPainter(widget.color),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GlowSpherePainter extends CustomPainter {
+  final Color color;
+  _GlowSpherePainter(this.color);
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width/2, size.height/2);
+    final paint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          Colors.white.withOpacity(0.7),
+          color.withOpacity(0.5),
+          Colors.blueAccent.withOpacity(0.18),
+          Colors.transparent
+        ],
+        stops: [0.0, 0.4, 0.8, 1.0],
+      ).createShader(Rect.fromCircle(center: center, radius: size.width/2));
+    canvas.drawCircle(center, size.width/2, paint);
+    // 외곽 블루/퍼플 글로우
+    final outer = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          Colors.blueAccent.withOpacity(0.18),
+          Colors.purpleAccent.withOpacity(0.12),
+          Colors.transparent
+        ],
+        stops: [0.7, 0.9, 1.0],
+      ).createShader(Rect.fromCircle(center: center, radius: size.width/2));
+    canvas.drawCircle(center, size.width/2, outer);
+  }
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _CoreGlowPainter extends CustomPainter {
+  final Color color;
+  _CoreGlowPainter(this.color);
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width/2, size.height/2);
+    final paint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          Colors.white.withOpacity(0.98),
+          color.withOpacity(0.4),
+          Colors.transparent
+        ],
+        stops: [0.0, 0.5, 1.0],
+      ).createShader(Rect.fromCircle(center: center, radius: size.width/5));
+    canvas.drawCircle(center, size.width/5, paint);
+  }
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _EnergyLine {
+  final double size;
+  final List<double> noiseOffsets;
+  final double baseRadius;
+  final double speed;
+  _EnergyLine(this.size, math.Random random)
+      : noiseOffsets = List.generate(32, (_) => random.nextDouble() * 2 * math.pi),
+        baseRadius = size/2 * (0.7 + random.nextDouble()*0.2),
+        speed = 0.5 + random.nextDouble();
+}
+
+class _EnergyLinePainter extends CustomPainter {
+  final _EnergyLine line;
+  final Color color;
+  final double t;
+  _EnergyLinePainter(this.line, this.color, this.t);
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width/2, size.height/2);
+    final path = Path();
+    for (int i = 0; i <= line.noiseOffsets.length; i++) {
+      final angle = (i/line.noiseOffsets.length) * 2 * math.pi;
+      final noise = math.sin(angle*3 + t*2*math.pi*line.speed + line.noiseOffsets[i%line.noiseOffsets.length]);
+      final r = line.baseRadius + noise * 12;
+      final x = center.dx + r * math.cos(angle);
+      final y = center.dy + r * math.sin(angle);
+      if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
+    }
+    path.close();
+    // 여러 컬러로 레이어링
+    final colors = [color.withOpacity(0.22)] + getSfHighlightColors(color).map((c) => c.withOpacity(0.10)).toList();
+    for (int i = 0; i < colors.length; i++) {
+      final paint = Paint()
+        ..color = colors[i]
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.2 - i*0.5;
+      canvas.drawPath(path, paint);
+    }
+  }
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+class _Particle {
+  double angle;
+  double radius;
+  double speed;
+  double size;
+  double opacity;
+  _Particle(double sphereSize, math.Random random)
+      : angle = random.nextDouble() * 2 * math.pi,
+        radius = sphereSize/2 * (0.5 + random.nextDouble()*0.4),
+        speed = 0.2 + random.nextDouble()*0.8,
+        size = 1.5 + random.nextDouble()*2.5,
+        opacity = 0.3 + random.nextDouble()*0.7;
+}
+
+class _ParticleSpherePainter extends CustomPainter {
+  final List<_Particle> particles;
+  final Color color;
+  final double t;
+  _ParticleSpherePainter(this.particles, this.color, this.t);
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width/2, size.height/2);
+    final highlightColors = getSfHighlightColors(color);
+    for (final p in particles) {
+      final angle = p.angle + t * 2 * math.pi * p.speed;
+      final x = center.dx + p.radius * math.cos(angle);
+      final y = center.dy + p.radius * math.sin(angle);
+      // 여러 색상, 크기, 투명도
+      for (int i = 0; i < highlightColors.length; i++) {
+        final paint = Paint()
+          ..color = highlightColors[i].withOpacity(p.opacity * (0.7 - i*0.15))
+          ..maskFilter = MaskFilter.blur(BlurStyle.normal, 1.5 + i*0.5);
+        canvas.drawCircle(Offset(x, y), p.size * (1.0 - i*0.2), paint);
+      }
+    }
+  }
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 } 
